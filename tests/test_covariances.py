@@ -10,7 +10,7 @@ from covmats import (
     get_explained_var,
     sample_from_sparse_cov_factor,
 )
-from covmats._utils import NDArrayFloat
+from covmats._types import NDArrayFloat
 
 
 def test_get_shape() -> None:
@@ -135,9 +135,7 @@ def test_negative_eigen_values() -> None:
     V = np.diag([5.0, 4.0, -1.0, -2.0])
 
     # This is the dense matrix to decompose
-    mat = U @ V @ U.T
-
-    cov_mat = CovViaDense(mat=mat)
+    cov_mat = CovViaDense(U @ V @ U.T)
 
     cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2023)
     assert cov_mat_eigen.n_pc == 2

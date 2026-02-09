@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: 3.13
 
+      - name: install libsuitesparse
+        run: sudo apt install -y libsuitesparse-dev
+
       - name: Install dependencies with uv
         run: |
           pip install uv
@@ -42,43 +45,6 @@ jobs:
           name: pre-commit-report
           path: pre-commit-report
 
-  tests-legacy:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python-version: ["3.7"]
-
-    env:
-      NUMBA_DISABLE_JIT: 1
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install deps (pip)
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install -U pip setuptools wheel
-          pip install -e .[all]
-
-      - name: Run tests
-        env:
-          COVERAGE_FILE: .coverage.${{ matrix.python-version }}
-        run: |
-          source .venv/bin/activate
-          pytest -v --cov=covmats --cov-config=.coveragerc --cov-report=
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: '${{ github.workspace }}/.coverage.${{ matrix.python-version }}'
-          include-hidden-files: true
-          if-no-files-found: error
-
   tests:
     runs-on: ubuntu-22.04
     strategy:
@@ -88,6 +54,9 @@ jobs:
 
     env:
       NUMBA_DISABLE_JIT: 1
+
+    needs:
+      - static_analysis
 
     steps:
       - uses: actions/checkout@v4

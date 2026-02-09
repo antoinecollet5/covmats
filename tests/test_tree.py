@@ -1,7 +1,7 @@
 from time import time
 
 import numpy as np
-from covmats.tree import Cluster
+from covmats._tree import Cluster
 
 
 def test_build_cluster() -> None:

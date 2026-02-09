@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
+from covmats._helpers import get_pts_coords_regular_grid
 from covmats._toeplitz import (
     create_toepliz_first_row,
-    get_pts_coords_regular_grid,
     toeplitz_product,
 )
 from covmats._types import NDArrayFloat

@@ -10,7 +10,7 @@ from covmats._helpers import check_random_state
 from covmats._types import NDArrayFloat
 
 try:
-    from sksparse.cholmod import Factor as SparseFactor
+    from sksparse.cholmod import Factor as SparseChoFactor
     from sksparse.cholmod import cholesky
 except (ImportError, ModuleNotFoundError):
 
@@ -18,7 +18,7 @@ except (ImportError, ModuleNotFoundError):
         def __init__(self, *args, **kwargs):
             raise ModuleNotFoundError(
                 "sksparse could not be loaded. Please "
-                " install it to use SparseFactor (see "
+                " install it to use SparseChoFactor (see "
                 "https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation"
                 ")"
             )
@@ -29,7 +29,7 @@ except (ImportError, ModuleNotFoundError):
         def log_pdet(self):
             return (-2 * np.log(np.diag(self._chol_P)).sum(axis=-1),)
 
-    def cholesky(mat: csc_matrix) -> SparseFactor:
+    def cholesky(mat: csc_matrix) -> SparseChoFactor:
         raise ModuleNotFoundError(
             "sksparse could not be loaded. Please"
             " install it to use sparse_cholesky (see "
