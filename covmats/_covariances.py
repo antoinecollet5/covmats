@@ -118,6 +118,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         "solvematvecs",
         "_logp_det",
         "_covariance",
+        "_allow_singular",
     ]
 
     def __init__(self, shape: Tuple[int, int], log_pdet: float, rank: int) -> None:
@@ -163,6 +164,9 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
+        if self._covariance.size != 0:
+            return self._covariance.diagonal()
+
         approx_diag = np.zeros(self.number_pts)
         for i in range(self.number_pts):
             # construct the ith row of the identity matrix
@@ -173,7 +177,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
     def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
-        return float(np.sum(self.get_diagonal()))
+        return np.sum(self.get_diagonal()).item()
 
     @property
     def log_pdet(self) -> float:
@@ -1041,6 +1045,7 @@ class CovViaDense(CovarianceMatrix):
             log_pdet=np.log(sp.linalg.det(covariance)),
             rank=np.linalg.matrix_rank(covariance),
         )
+        self._allow_singular = True
         # must be initialized after
         self._covariance = covariance
         self.nugget = nugget
@@ -1053,7 +1058,11 @@ class CovViaDense(CovarianceMatrix):
         """Return the covariance matrix conjugate transpose times the vector x."""
         return np.dot(self.covariance.T, x)
 
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat: ...  # return TODO
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        raise NotImplementedError(
+            "Whittening is not implemented for a dense matrix!\n"
+            "Please decompose using SVD or Cholesky!"
+        )
 
     def _colorize(
         self, x: NDArrayFloat
@@ -1065,11 +1074,7 @@ class CovViaDense(CovarianceMatrix):
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
+        return self._covariance.diagonal()
 
 
 def generate_dense_matrix(
@@ -1207,8 +1212,12 @@ class CovViaDiagonal(CovarianceMatrix):
         """Return the covariance matrix times the vector x."""
         return self.get_diagonal() * x
 
+    def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the matrix X."""
+        return self.get_diagonal()[:, np.newaxis] * X
+
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._LP)
+        return _dot_diag(x.T, self._LP).T
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return _dot_diag(x, self._sqrt_diagonal)
@@ -1225,15 +1234,16 @@ class CovViaDiagonal(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
+
+        return (
+            self._LP * self._LP * b
+            if b.ndim < 2
+            else (self._LP * self._LP)[:, np.newaxis] * b
+        )
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
+        return self._diagonal
 
 
 class CovViaEnsemble(CovarianceMatrix):
@@ -1280,6 +1290,8 @@ class CovViaEnsemble(CovarianceMatrix):
         ensemble : NDArrayFloat
             Ensemble of realization with shape (:math:`N_{s}`, :math:`N_{e}`).
         """
+        # TODO: rank and log_pdet
+        # rank
         # on axis 1, the number of parameters
         super().__init__(
             shape=(ensemble.shape[1], ensemble.shape[1]), log_pdet=0.0, rank=0
@@ -1434,10 +1446,6 @@ class CovViaFFT(CovViaKernel):
         """Return the diagonal entries of the matrix (variances)."""
         return self._kernel(np.zeros(len(self._pts)))
 
-    def get_trace(self) -> float:
-        """Return the trace (sum of the diagonal) of the covariance matrix."""
-        return float(np.sum(self.get_diagonal()))
-
 
 class CovViaHierarchical(CovViaKernel):
     """
@@ -1506,10 +1514,6 @@ class CovViaHierarchical(CovViaKernel):
         """Return the diagonal entries of the matrix (variances)."""
         return self._kernel(np.zeros(len(self._pts)))
 
-    def get_trace(self) -> float:
-        """Return the trace of the covariance matrix."""
-        return float(np.sum(self.get_diagonal()))
-
 
 #
 class CovViaPrecision(CovarianceMatrix):
@@ -1520,7 +1524,6 @@ class CovViaPrecision(CovarianceMatrix):
         "_v",
         "_null_basis",
         "_eps",
-        "_allow_singular",
     ]
 
     def __init__(self, precision, covariance=None) -> None:
@@ -1570,10 +1573,6 @@ class CovViaPrecision(CovarianceMatrix):
         """Return the diagonal entries of the matrix (variances)."""
         return self.covariance.diagonal()
 
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
-
 
 # TODO
 class CovViaSparsePrecision(CovarianceMatrix):
@@ -1592,7 +1591,6 @@ class CovViaSparsePrecision(CovarianceMatrix):
         "_v",
         "_null_basis",
         "_eps",
-        "_allow_singular",
         "_sparse_precision",
         "_sparse_cho_factor",
     ]
@@ -1665,10 +1663,12 @@ class CovViaSparsePrecision(CovarianceMatrix):
 
 
 class CovViaCholesky(CovarianceMatrix):
+    __slots__ = ["_factor"]
+
     def __init__(self, cholesky) -> None:
         L = self._validate_matrix(cholesky, "cholesky")
 
-        self._factor = L
+        self._factor: NDArrayFloat = L
         self._allow_singular = False
 
         super().__init__(
@@ -1683,7 +1683,7 @@ class CovViaCholesky(CovarianceMatrix):
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
+        return np.linalg.multi_dot([self._factor, self._factor.T, x])
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         m = x.T.shape[0]
@@ -1695,15 +1695,7 @@ class CovViaCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
+        return sp.linalg.cho_solve((self._factor, True), b)
 
 
 class CovViaSparseCholesky(CovarianceMatrix):
@@ -1736,14 +1728,6 @@ class CovViaSparseCholesky(CovarianceMatrix):
         """Solve Ax = b, with A, the current covariance matrix instance."""
         return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
-
 
 class CovViaEigendecomposition(CovarianceMatrix):
     __slots__: List[str] = [
@@ -1753,7 +1737,6 @@ class CovViaEigendecomposition(CovarianceMatrix):
         "_v",
         "_null_basis",
         "_eps",
-        "_allow_singular",
     ]
 
     def __init__(self, eigendecomposition: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
@@ -1861,10 +1844,6 @@ class CovViaEigendecomposition(CovarianceMatrix):
             np.multiply(1.0 / self._w, np.dot(self._v.T, b.reshape(-1, ne))),
         )
 
-    def get_trace(self) -> float:
-        """Return the trace of the covariance matrix."""
-        return float(np.sum(self.get_diagonal()))
-
     def todense(self) -> NDArrayFloat:
         return np.dot(self._v, np.multiply(self._w, self._v.T))
 
@@ -1901,7 +1880,6 @@ class CovViaPSD(CovarianceMatrix):
     __slots__: List[str] = [
         "_LP",
         "_psd",
-        "_allow_singular",
     ]
 
     def __init__(self, psd) -> None:
@@ -1925,14 +1903,6 @@ class CovViaPSD(CovarianceMatrix):
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         return sp.linalg.solve(self.covariance, b, assume_a="sym")
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return self.covariance.trace()
 
 
 def get_matrix_eigen_factorization(
