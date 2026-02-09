@@ -19,10 +19,8 @@ import numpy as np
 import scipy as sp
 from future.moves.builtins import float
 from numpy.random import Generator, RandomState
-from scipy.linalg import solve
 from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
-from scipy.spatial import cKDTree, distance_matrix
 from scipy.spatial.distance import cdist
 
 from covmats._helpers import check_random_state, get_pts_coords_regular_grid
@@ -64,7 +62,7 @@ class CallBack:
         self.res = []
 
 
-class CovarianceMatrix(LinearOperator, abc.ABC):
+class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     """
     Representation of a covariance matrix.
 
@@ -137,7 +135,8 @@ class CovarianceMatrix(LinearOperator, abc.ABC):
         self._log_pdet: float = log_pdet
         self._rank: int = rank
         self._covariance: NDArrayFloat = np.array([])
-        super().__init__(dtype="d", shape=shape)
+        self.dtype = "d"  # LinearOperator
+        self._shape = shape
 
     @property
     def number_pts(self) -> int:
@@ -179,7 +178,10 @@ class CovarianceMatrix(LinearOperator, abc.ABC):
     @property
     def log_pdet(self) -> float:
         """
-        Log of the pseudo-determinant of the covariance matrix
+        Log of the pseudo-determinant of the covariance matrix. In linear algebra and
+        statistics, the pseudo-determinant[1] is the product of all non-zero
+        eigenvalues of a square matrix. It coincides with the regular determinant
+        when the matrix is non-singular.
         """
         return np.array(self._log_pdet, dtype=float)[()]
 
@@ -984,7 +986,7 @@ def build_preconditioner(
 
     # Build the tree
     start: float = time()
-    tree: cKDTree = cKDTree(pts, leafsize=32)
+    tree: sp.spatial.cKDTree = sp.spatial.cKDTree(pts, leafsize=32)
     end: float = time()
 
     logging.log(logging.INFO, f"Tree building time = {end - start}")
@@ -1009,7 +1011,7 @@ def build_preconditioner(
     # TODO: This is very inefficient and must be re-written
     for i in np.arange(nb_pts):
         Q = kernel(cdist(pts[ind[i, :], :], pts[ind[i, :], :]))
-        nui = np.linalg.solve(Q, y)
+        nui = sp.linalg.solve(Q, y)
         nu[i, :] = np.copy(nui.transpose())
 
     end = time()
@@ -1051,15 +1053,15 @@ class CovViaDense(CovarianceMatrix):
         """Return the covariance matrix conjugate transpose times the vector x."""
         return np.dot(self.covariance.T, x)
 
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._LP)
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat: ...  # return TODO
 
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._sqrt_diagonal)
+    def _colorize(
+        self, x: NDArrayFloat
+    ) -> NDArrayFloat: ...  # return _dot_diag(x, self._sqrt_diagonal)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1096,36 +1098,114 @@ def generate_dense_matrix(
     scaled_pts = np.array(pts, copy=True)
     for dim in range(scaled_pts.shape[1]):
         scaled_pts[:, dim] /= len_scale[dim]
-    return CovViaDense(kernel(distance_matrix(scaled_pts, scaled_pts)), nugget=nugget)
+    return CovViaDense(
+        kernel(sp.spatial.distance_matrix(scaled_pts, scaled_pts)), nugget=nugget
+    )
+
+
+def _dot_diag(x: NDArrayFloat, d: NDArrayFloat):
+    # If d were a full diagonal matrix, x @ d would always do what we want.
+    # Special treatment is needed for n-dimensional `d` in which each row
+    # includes only the diagonal elements of a covariance matrix.
+    return x * d if x.ndim < 2 else x * np.expand_dims(d, -2)
 
 
 class CovViaDiagonal(CovarianceMatrix):
+    r"""
+    Representation of a covariance matrix from its diagonal.
+
+    Attributes
+    ----------
+    diagonal : NDArrayFloat
+        The diagonal elements of a diagonal matrix.
+
+    Notes
+    -----
+    Let the diagonal elements of a diagonal covariance matrix :math:`D` be
+    stored in the vector :math:`d`.
+
+    When all elements of :math:`d` are strictly positive, whitening of a
+    data point :math:`x` is performed by computing
+    :math:`x \cdot d^{-1/2}`, where the inverse square root can be taken
+    element-wise.
+    :math:`\log\det{D}` is calculated as :math:`-2 \sum(\log{d})`,
+    where the :math:`\log` operation is performed element-wise.
+
+    This `Covariance` class supports singular covariance matrices. When
+    computing ``_log_pdet``, non-positive elements of :math:`d` are
+    ignored. Whitening is not well defined when the point to be whitened
+    does not lie in the span of the columns of the covariance matrix. The
+    convention taken here is to treat the inverse square root of
+    non-positive elements of :math:`d` as zeros.
+
+    Examples
+    --------
+    Prepare a symmetric positive definite covariance matrix ``A`` and a
+    data point ``x``.
+
+    >>> import numpy as np
+    >>> from scipy import stats
+    >>> rng = np.random.default_rng()
+    >>> n = 5
+    >>> A = np.diag(rng.random(n))
+    >>> x = rng.random(size=n)
+
+    Extract the diagonal from ``A`` and create the `Covariance` object.
+
+    >>> d = np.diag(A)
+    >>> cov = stats.Covariance.from_diagonal(d)
+
+    Compare the functionality of the `Covariance` object against a
+    reference implementations.
+
+    >>> res = cov.whiten(x)
+    >>> ref = np.diag(d**-0.5) @ x
+    >>> np.allclose(res, ref)
+    True
+    >>> res = cov.log_pdet
+    >>> ref = np.linalg.slogdet(A)[-1]
+    >>> np.allclose(res, ref)
+    True
+
+    """
+
     __slots__ = ["_diagonal"]
 
-    def __init__(self, diagonal) -> None:
-        self._diagonal = self._validate_vector(diagonal, "diagonal")
+    def __init__(self, diagonal: np.typing.ArrayLike) -> None:
+        """
+        Initialize the instance.
 
-        i_zero = diagonal <= 0
-        positive_diagonal = np.array(diagonal, dtype=np.float64)
+        Parameters
+        ----------
+        diagonal : np.typing.ArrayLike
+            The diagonal elements of a diagonal matrix.
+        """
+        _diagonal = self._validate_vector(
+            A=np.asarray(diagonal, dtype=np.float64), name="diagonal"
+        )
+        self._diagonal = _diagonal
+
+        i_zero = self.get_diagonal() <= 0
+        positive_diagonal = np.array(self._diagonal, dtype=np.float64)
 
         positive_diagonal[i_zero] = 1  # ones don't affect determinant
 
         psuedo_reciprocals = 1 / np.sqrt(positive_diagonal)
         psuedo_reciprocals[i_zero] = 0
 
-        self._sqrt_diagonal = np.sqrt(diagonal)
+        self._sqrt_diagonal = np.sqrt(_diagonal)
         self._LP = psuedo_reciprocals
         self._i_zero = i_zero
         self._allow_singular = True
         super().__init__(
-            shape=(diagonal.size, diagonal.size),
+            shape=(_diagonal.size, _diagonal.size),
             log_pdet=np.sum(np.log(positive_diagonal), axis=-1),
             rank=positive_diagonal.shape[-1] - i_zero.sum(axis=-1),
         )
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
+        return self.get_diagonal() * x
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         return _dot_diag(x, self._LP)
@@ -1145,7 +1225,7 @@ class CovViaDiagonal(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1484,7 +1564,7 @@ class CovViaPrecision(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1584,13 +1664,6 @@ class CovViaSparsePrecision(CovarianceMatrix):
         )
 
 
-def _dot_diag(x, d):
-    # If d were a full diagonal matrix, x @ d would always do what we want.
-    # Special treatment is needed for n-dimensional `d` in which each row
-    # includes only the diagonal elements of a covariance matrix.
-    return x * d if x.ndim < 2 else x * np.expand_dims(d, -2)
-
-
 class CovViaCholesky(CovarianceMatrix):
     def __init__(self, cholesky) -> None:
         L = self._validate_matrix(cholesky, "cholesky")
@@ -1622,7 +1695,7 @@ class CovViaCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1661,7 +1734,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1851,7 +1924,7 @@ class CovViaPSD(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return solve(self.covariance, b, assume_a="sym")
+        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""

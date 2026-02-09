@@ -3,6 +3,7 @@
 from typing import Sequence, Union
 
 import numpy as np
+from scipy._lib._util import check_random_state as check_random_state
 
 from covmats._types import NDArrayFloat, NDArrayInt
 
