@@ -1,15 +1,13 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Antoine COLLET
+
 """Provide covariance matrix representation.
 
 It is an adaptation of Scipy's implementation adding some representation types.
 
-Note: add some notes about:
-https://github.com/arvindks/kle/blob/master/covariance/covariance.py
 
-And cite Saibaba's phd thesis about the uncertainty and all.
-
-
-Covariance classes
-^^^^^^^^^^^^^^^^^^
+Abstract Covariance class
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 To represent covariance matrices.
 
@@ -17,34 +15,36 @@ To represent covariance matrices.
    :toctree: _autosummary
 
     CovarianceMatrix
-    CovViaDense
-    CovViaDiagonal
-    CovViaEnsemble
-    CovViaCholesky
-    CovViaSparseCholesky
-    CovViaPrecision
-    CovViaSparsePrecision
-    CovViaFFT
-    CovViaEigendecomposition
-    CovViaSparsePrecision
-    CovViaHierarchical
-    CovViaSparsePrecision
+    CovViaKernel
 
+Specialized Covariance classes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Covariance functions
-^^^^^^^^^^^^^^^^^^^^
-
-To work with covariance matrices and low rank approximations.
+Various representation of covariance matrices.
 
 .. autosummary::
    :toctree: _autosummary
 
-    eigen_factorize_cov_mat
-    generate_dense_matrix
-    get_matrix_eigen_factorization
-    sample_from_sparse_cov_factor
-    get_explained_var
+    CovViaDense
+    CovViaDiagonal
+    CovViaCholesky
+    CovViaSparseCholesky
+    CovViaPrecision
+    CovViaSparsePrecision
+    CovViaEigenFactorization
+    CovViaEnsemble
+    CovViaFFT
 
+Matrix compression
+^^^^^^^^^^^^^^^^^^^
+
+Eigen decomposition
+
+.. autosummary::
+   :toctree: _autosummary
+
+    get_matrix_eigen_factorization
+    eigen_factorize_cov_mat
 
 Working with priors and trends
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -63,29 +63,31 @@ To represent trend through drift matrix. To use along with geostatistical regula
     ConstantDriftMatrix
     LinearDriftMatrix
 
-Matrix compression
-^^^^^^^^^^^^^^^^^^^
+Other utility functions
+^^^^^^^^^^^^^^^^^^^^^^^
 
-Eigen decomposition
+To work with covariance matrices and low rank approximations.
 
 .. autosummary::
    :toctree: _autosummary
 
-    get_matrix_eigen_factorization
-    eigen_factorize_cov_mat
+    sample_from_sparse_cov_factor
+    get_explained_var
+
 
 """
 
+from covmats.__about__ import __author__, __email__, __version__
 from covmats._covariances import (
     CovarianceMatrix,
     CovViaCholesky,
     CovViaDense,
-    CovViaEigendecomposition,
+    CovViaDiagonal,
+    CovViaEigenFactorization,
     CovViaEnsemble,
     CovViaFFT,
-    CovViaHierarchical,
+    CovViaKernel,
     CovViaPrecision,
-    CovViaPSD,
     CovViaSparseCholesky,
     CovViaSparsePrecision,
     eigen_factorize_cov_mat,
@@ -108,15 +110,15 @@ from covmats._sparse_helpers import sample_from_sparse_cov_factor
 __all__ = [
     "CovarianceMatrix",
     "CovViaDense",
+    "CovViaDiagonal",
     "CovViaCholesky",
     "CovViaSparseCholesky",
     "CovViaPrecision",
     "CovViaSparsePrecision",
-    "CovViaEigendecomposition",
+    "CovViaEigenFactorization",
     "CovViaEnsemble",
     "CovViaFFT",
-    "CovViaHierarchical",
-    "CovViaPSD",
+    "CovViaKernel",
     "PriorTerm",
     "NullPriorTerm",
     "ConstantPriorTerm",
@@ -130,4 +132,7 @@ __all__ = [
     "eigen_factorize_cov_mat",
     "sample_from_sparse_cov_factor",
     "generate_dense_matrix",
+    "__version__",
+    "__email__",
+    "__author__",
 ]

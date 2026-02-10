@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Antoine COLLET
+
 """Provide covariance matrix representation.
 
 Note: add some notes about:
@@ -11,20 +14,19 @@ from __future__ import annotations
 import abc
 import logging
 from abc import abstractmethod
-from functools import cached_property
 from time import time
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import scipy as sp
-from future.moves.builtins import float
 from numpy.random import Generator, RandomState
+from packaging.version import Version
+from scipy import __version__ as spversion
 from scipy.sparse import csc_array, csr_array
-from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
+from scipy.sparse.linalg import LinearOperator, gmres
 from scipy.spatial.distance import cdist
 
 from covmats._helpers import check_random_state, get_pts_coords_regular_grid
-from covmats._hmatrix import Hmatrix
 from covmats._sparse_helpers import (
     SparseChoFactor,
     get_sparse_covmat_variance,
@@ -60,6 +62,42 @@ class CallBack:
     def clear(self) -> None:
         """Delete all results."""
         self.res = []
+
+
+def _gmres_wrapper(
+    self: CovarianceMatrix,
+    b,
+    rtol: float,
+    maxiter: int,
+    callback: CallBack,
+    M: Optional[Callable] = None,
+    atol: float = 0.0,
+) -> Tuple[NDArrayFloat, int]:
+
+    # Support for python 3.8: the gmres API has been modified in
+    # scipy from version 1.12 (tol, rtol).
+    # Unfortunately, python 3.7 and 3.8 do not support scipy-1.12
+    if Version(spversion) > Version("1.12"):
+        return gmres(
+            self,
+            b,
+            rtol=rtol,
+            maxiter=maxiter,
+            callback=callback,
+            M=M,
+            atol=0.0,
+            callback_type="legacy",
+        )
+
+    # scipy < 1.12
+    return gmres(
+        self,
+        b,
+        tol=rtol,
+        maxiter=maxiter,
+        callback=callback,
+        callback_type="legacy",
+    )
 
 
 class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
@@ -117,7 +155,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         "count",
         "solvematvecs",
         "_logp_det",
-        "_covariance",
+        "_dense_mat",
         "_allow_singular",
     ]
 
@@ -135,8 +173,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         self.solvmatvecs: int = 0
         self._log_pdet: float = log_pdet
         self._rank: int = rank
-        self._covariance: NDArrayFloat = np.array([])
-        self.dtype = "d"  # LinearOperator
+        self._dense_mat: NDArrayFloat = np.array([])
+        self.dtype = np.dtype("d")  # float64 for LinearOperator
         self._shape = shape
 
     @property
@@ -164,9 +202,12 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        if self._covariance.size != 0:
-            return self._covariance.diagonal()
+        # try to extract the diagonal from the dense matrix if is exists
+        if self._dense_mat is not None:
+            if self._dense_mat.shape == self.shape:
+                return self._dense_mat.diagonal()
 
+        # Otherwise extract it using matrix vector products
         approx_diag = np.zeros(self.number_pts)
         for i in range(self.number_pts):
             # construct the ith row of the identity matrix
@@ -192,16 +233,31 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     @property
     def rank(self) -> int:
         """
-        Rank of the covariance matrix
+        Rank of the covariance matrix.
         """
         return np.array(self._rank, dtype=int)[()]
+
+    def _todense(self) -> NDArrayFloat:
+        """
+        Explicit dense representation of the covariance matrix.
+        """
+        raise NotImplementedError("_todense is not implemented!")
+
+    def todense(self) -> NDArrayFloat:
+        """Explicit dense representation of the covariance matrix."""
+        if self._dense_mat is not None:
+            if self._dense_mat.shape == self.shape:
+                return self._dense_mat
+        return self._todense()
 
     @property
     def covariance(self) -> NDArrayFloat:
         """
-        Explicit representation of the covariance matrix
+        Explicit dense representation of the covariance matrix.
+
+        Alias for `todense()`.
         """
-        return self._covariance
+        return self.todense()
 
     def _validate_matrix(self, A, name):
         A = np.atleast_2d(A)
@@ -738,16 +794,15 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         return CovViaSparseCholesky(sparse_cholesky)
 
     @staticmethod
-    def from_eigendecomposition(eigendecomposition):
+    def from_eigenfactorization(eigenfactorization):
         r"""
-        Representation of a covariance provided via eigendecomposition
+        Representation of a covariance provided via eigenfactorization
 
         Parameters
         ----------
-        eigendecomposition : sequence
+        eigenfactorization : sequence
             A sequence (nominally a tuple) containing the eigenvalue and
-            eigenvector arrays as computed by `scipy.linalg.eigh` or
-            `numpy.linalg.eigh`.
+            eigenvector arrays as computed by `scipy.sparse.eigsh`.
 
         Notes
         -----
@@ -782,11 +837,11 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         >>> A = A @ A.T  # make the covariance symmetric positive definite
         >>> x = rng.random(size=n)
 
-        Perform the eigendecomposition of ``A`` and create the `Covariance`
+        Perform the eigenfactorization of ``A`` and create the `Covariance`
         object.
 
         >>> w, v = np.linalg.eigh(A)
-        >>> cov = stats.Covariance.from_eigendecomposition((w, v))
+        >>> cov = stats.Covariance.from_eigenfactorization((w, v))
 
         Compare the functionality of the `Covariance` object against
         reference implementations.
@@ -801,7 +856,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         True
 
         """
-        return CovViaEigendecomposition(eigendecomposition)
+        return CovViaEigenFactorization(eigenfactorization)
 
     @abc.abstractmethod
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat: ...
@@ -1037,17 +1092,17 @@ class CovViaDense(CovarianceMatrix):
 
     def __init__(
         self,
-        covariance: NDArrayFloat,
+        dense_mat: NDArrayFloat,
         nugget: float = 0,
     ) -> None:
         super().__init__(
-            (covariance.shape[0], covariance.shape[0]),
-            log_pdet=np.log(sp.linalg.det(covariance)),
-            rank=np.linalg.matrix_rank(covariance),
+            (dense_mat.shape[0], dense_mat.shape[0]),
+            log_pdet=np.log(sp.linalg.det(dense_mat)),
+            rank=np.linalg.matrix_rank(dense_mat),
         )
         self._allow_singular = True
         # must be initialized after
-        self._covariance = covariance
+        self._dense_mat = dense_mat
         self.nugget = nugget
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1060,13 +1115,15 @@ class CovViaDense(CovarianceMatrix):
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         raise NotImplementedError(
-            "Whittening is not implemented for a dense matrix!\n"
+            "`whitening` is not implemented for a dense matrix!\n"
             "Please decompose using SVD or Cholesky!"
         )
 
-    def _colorize(
-        self, x: NDArrayFloat
-    ) -> NDArrayFloat: ...  # return _dot_diag(x, self._sqrt_diagonal)
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        raise NotImplementedError(
+            "`colorize` is not implemented for a dense matrix!\n"
+            "Please decompose using SVD or Cholesky!"
+        )
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
@@ -1074,7 +1131,7 @@ class CovViaDense(CovarianceMatrix):
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
-        return self._covariance.diagonal()
+        return self._dense_mat.diagonal()
 
 
 def generate_dense_matrix(
@@ -1228,8 +1285,7 @@ class CovViaDiagonal(CovarianceMatrix):
         """
         return ~np.any(_dot_diag(x, self._i_zero), axis=-1)
 
-    @cached_property
-    def _covariance(self) -> NDArrayFloat:
+    def _todense(self) -> NDArrayFloat:
         return np.apply_along_axis(np.diag, -1, self._diagonal)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
@@ -1323,7 +1379,7 @@ class CovViaEnsemble(CovarianceMatrix):
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return _dot_diag(x, self._sqrt_diagonal)
 
-    def todense(self) -> NDArrayFloat:
+    def _todense(self) -> NDArrayFloat:
         """
         Return a dense representation of the matrix.
         """
@@ -1338,14 +1394,14 @@ class CovViaEnsemble(CovarianceMatrix):
         Note that the dense covariance matrix is never built.
         """
         residual = CallBack()
-        x, info = gmres(
+
+        x, info = _gmres_wrapper(
             self,
-            b,
+            b=b,
             rtol=rtol,
             maxiter=maxiter,
             callback=residual,
             atol=0.0,
-            callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
         return x
@@ -1429,16 +1485,16 @@ class CovViaFFT(CovViaKernel):
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
-        x, info = gmres(
+        x, info = _gmres_wrapper(
             self,
-            b,
+            b=b,
             rtol=rtol,
             maxiter=maxiter,
             callback=residual,
             M=self._preconditioner,
             atol=0.0,
-            callback_type="legacy",
         )
+
         self.solvmatvecs += residual.itercount
         return x
 
@@ -1447,75 +1503,6 @@ class CovViaFFT(CovViaKernel):
         return self._kernel(np.zeros(len(self._pts)))
 
 
-class CovViaHierarchical(CovViaKernel):
-    """
-    Represents a hierarchical covariance matrix.
-
-    Works for arbitrary kernels on irregular grids
-    """
-
-    def __init__(
-        self,
-        kernel: Callable,
-        pts: NDArrayFloat,
-        len_scale: NDArrayFloat,
-        rkmax: int = 32,
-        eps: float = 1.0e-9,
-        nugget: float = 0.0,
-        is_verbose: bool = False,
-        k: int = 100,
-    ) -> None:
-        n: int = np.size(pts, 0)
-        ind = np.arange(n)
-
-        self.H = Hmatrix(pts, kernel, ind, is_verbose, rkmax, eps)
-
-        log_pdet = 1.0
-        rank = 1
-
-        super().__init__(pts, kernel, log_pdet=log_pdet, rank=rank, nugget=nugget)
-        self.is_verbose = is_verbose
-        self.preconditioner: csr_array = build_preconditioner(pts, kernel, k=k)
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        y = np.zeros_like(x, dtype="d")
-        return self.H.mult(x, y, self.is_verbose) * (1 + self._nugget)
-
-    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix conjugate transpose times the vector x."""
-        y = np.zeros_like(x, dtype="d")
-        return self.H.transpmult(x, y, self.is_verbose)
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x  # TODO
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x  # TODO
-
-    def solve(
-        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
-    ) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        residual = CallBack()
-        x, info = lgmres(
-            self,
-            b,
-            rtol=rtol,
-            maxiter=maxiter,
-            callback=residual,
-            M=self.preconditioner,
-            atol=0.0,
-        )
-        self.solvmatvecs += residual.itercount
-        return x
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self._kernel(np.zeros(len(self._pts)))
-
-
-#
 class CovViaPrecision(CovarianceMatrix):
     __slots__: List[str] = [
         "_chol_P",
@@ -1527,6 +1514,7 @@ class CovViaPrecision(CovarianceMatrix):
     ]
 
     def __init__(self, precision, covariance=None) -> None:
+
         precision = self._validate_matrix(precision, "precision")
         if covariance is not None:
             covariance = self._validate_matrix(covariance, "covariance")
@@ -1535,43 +1523,44 @@ class CovViaPrecision(CovarianceMatrix):
                 raise ValueError(message)
 
         self._chol_P = np.linalg.cholesky(precision)  # lower triangle
-        self._log_pdet = -2 * np.log(np.diag(self._chol_P)).sum(axis=-1)
-        self._rank = precision.shape[-1]  # must be full rank if invertible
         self._precision = precision
-        self._cov_matrix = covariance
-        self._shape = precision.shape
+
+        super().__init__(
+            shape=precision.shape,
+            log_pdet=-2 * np.log(np.diag(self._chol_P)).sum(axis=-1),
+            rank=precision.shape[-1],  # must be full rank if invertible
+        )
+
+        # Must be initialized after super()
+        self._dense_mat = covariance
         self._allow_singular = False
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
+        return sp.linalg.cho_solve((self._chol_P, True), x)
 
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._chol_P
-
-    @cached_property
-    def _covariance(self) -> NDArrayFloat:
+    def _todense(self) -> NDArrayFloat:
         n = self._shape[-1]
         return (
             sp.linalg.cho_solve((self._chol_P, True), np.eye(n))
-            if self._cov_matrix is None
-            else self._cov_matrix
+            if self._dense_mat is None
+            else self._dense_mat
         )
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        return x @ self._chol_P
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         m = x.T.shape[0]
         res = sp.linalg.solve_triangular(
             self._chol_P.T, x.T.reshape(m, -1), lower=False
         )
+        # L1^T @ b.T = x.T
         return res.reshape(x.T.shape).T
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self.covariance.diagonal()
+        return self._precision @ b
 
 
 # TODO
@@ -1677,8 +1666,7 @@ class CovViaCholesky(CovarianceMatrix):
             rank=L.shape[-1],  # must be full rank for cholesky
         )
 
-    @cached_property
-    def _covariance(self) -> NDArrayFloat:
+    def _todense(self) -> NDArrayFloat:
         return self._factor @ self._factor.T
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1708,8 +1696,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         self._shape = L.shape
         self._allow_singular = False
 
-    @cached_property
-    def _covariance(self):
+    def _todense(self):
         return self._factor @ self._factor.T
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1729,7 +1716,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
 
-class CovViaEigendecomposition(CovarianceMatrix):
+class CovViaEigenFactorization(CovarianceMatrix):
     __slots__: List[str] = [
         "_LP",
         "_LA",
@@ -1739,7 +1726,7 @@ class CovViaEigendecomposition(CovarianceMatrix):
         "_eps",
     ]
 
-    def __init__(self, eigendecomposition: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
+    def __init__(self, eigenfactorization: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
         """
         Initialize the instance.
 
@@ -1750,54 +1737,49 @@ class CovViaEigendecomposition(CovarianceMatrix):
             - 2D arrays of eigen vectors (columns) with size `(Ns, n_pc)`. Ns being the
             number of elements in the original covariance matrix.
         """
-        eigenvalues, eigenvectors = eigendecomposition
-        eigenvalues = self._validate_vector(eigenvalues.ravel(), "eigenvalues")
-        # eigenvectors = self._validate_matrix(eigenvectors, "eigenvectors")
-        message = "The shapes of `eigenvalues` and `eigenvectors` must be compatible."
-        try:
-            eigenvalues = np.expand_dims(eigenvalues, -2)
-            eigenvectors, eigenvalues = np.broadcast_arrays(eigenvectors, eigenvalues)
-            eigenvalues = eigenvalues[..., 0, :]
-        except ValueError:
-            raise ValueError(message)
+        eigenvalues, eigenvectors = eigenfactorization
 
-        i_zero = eigenvalues <= 0
-        positive_eigenvalues = np.array(eigenvalues, dtype=np.float64)
-        positive_eigenvalues[i_zero] = 1  # ones don't affect determinant
+        # i_zero = eigenvalues <= 0
+        # positive_eigenvalues = np.array(eigenvalues, dtype=np.float64)
+        # positive_eigenvalues[i_zero] = 1  # ones don't affect determinant
 
-        psuedo_reciprocals = 1 / np.sqrt(positive_eigenvalues)
-        psuedo_reciprocals[i_zero] = 0
+        # psuedo_reciprocals = 1 / np.sqrt(positive_eigenvalues)
+        # psuedo_reciprocals[i_zero] = 0
 
-        self._LP = eigenvectors * psuedo_reciprocals
-        self._LA = eigenvectors * np.sqrt(eigenvalues.ravel())
-        self._null_basis = eigenvectors * i_zero
-        # This is only used for `_support_mask`, not to decide whether
-        # the covariance is singular or not.
-        self._eps = sp.stats._multivariate._eigvalsh_to_eps(eigenvalues) * 10**3
+        # self._LP = eigenvectors * psuedo_reciprocals
+        # self._LA = eigenvectors * np.sqrt(eigenvalues.ravel())
+        # self._null_basis = eigenvectors * i_zero
+        # # This is only used for `_support_mask`, not to decide whether
+        # # the covariance is singular or not.
+        # self._eps = sp.stats._multivariate._eigvalsh_to_eps(eigenvalues) * 10**3
         self._allow_singular = True
         self._w = eigenvalues.reshape(-1, 1)
         self._v = eigenvectors
 
         super().__init__(
             shape=(eigenvectors.shape[0], eigenvectors.shape[0]),
-            log_pdet=np.sum(np.log(positive_eigenvalues), axis=-1),
-            rank=positive_eigenvalues.shape[-1] - i_zero.sum(axis=-1),
+            log_pdet=np.sum(np.log(eigenvalues), axis=0).item(),
+            rank=self.n_pc,
         )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._LP
+        # shape (r, n)
+        return (
+            (self._v.T * (1.0 / np.sqrt(self._w))).T @ self._v.T
+        ) @ x  # x @ self._LP
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._LA.T
+        # shape (n, r)
+        return (self._v * np.sqrt(self._w)) @ x  # TODO: this is not correct
 
-    @cached_property
-    def _covariance(self):
+    def _todense(self):
         return (self._v * self._w) @ self._v.T
 
     def _support_mask(self, x):
         """
         Check whether x lies in the support of the distribution.
         """
+        # TODO: this is not correct either
         residual = np.linalg.norm(x @ self._null_basis, axis=-1)
         in_support = residual < self._eps
         return in_support
@@ -1844,7 +1826,7 @@ class CovViaEigendecomposition(CovarianceMatrix):
             np.multiply(1.0 / self._w, np.dot(self._v.T, b.reshape(-1, ne))),
         )
 
-    def todense(self) -> NDArrayFloat:
+    def _todense(self) -> NDArrayFloat:
         return np.dot(self._v, np.multiply(self._w, self._v.T))
 
     def get_sparse_LLT_factor(self) -> csc_array:
@@ -1870,39 +1852,6 @@ class CovViaEigendecomposition(CovarianceMatrix):
     @property
     def eig_vects(self) -> NDArrayFloat:
         return self._v
-
-
-class CovViaPSD(CovarianceMatrix):
-    """
-    Representation of a covariance provided via an instance of _PSD
-    """
-
-    __slots__: List[str] = [
-        "_LP",
-        "_psd",
-    ]
-
-    def __init__(self, psd) -> None:
-        self._LP = psd.U
-        self._covariance = psd._M
-        self._psd = psd
-        self._allow_singular = False  # by default
-
-        super().__init__(shape=psd._M.shape, log_pdet=psd.log_pdet, rank=psd.rank)
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._LP
-
-    def _support_mask(self, x):
-        return self._psd._support_mask(x)
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
 
 
 def get_matrix_eigen_factorization(
@@ -1938,7 +1887,7 @@ def get_matrix_eigen_factorization(
     Tuple[NDArrayFloat, NDArrayFloat]
         Eigen values and eigen vectors.
     """
-    logging.info("Eigendecomposition of Prior Covariance")
+    logging.info("eigenfactorization of Prior Covariance")
 
     # twopass = False if not 'twopass' in self.params else self.params['twopass']
     start = time()
@@ -1950,13 +1899,13 @@ def get_matrix_eigen_factorization(
     else:
         v0 = None
 
-    eig_vals, eig_vects = eigsh(cov_mat, k=n_pc, v0=v0)
+    eig_vals, eig_vects = sp.sparse.linalg.eigsh(cov_mat, k=n_pc, v0=v0)
     eig_vals = eig_vals[::-1]
     eig_vals = eig_vals.reshape(-1, 1)  # make a column vector
     eig_vects = eig_vects[:, ::-1]
 
     logging.info(
-        "- time for eigendecomposition with k = %d is %g sec"
+        "- time for eigenfactorization with k = %d is %g sec"
         % (n_pc, round(time() - start))
     )
 
@@ -1977,7 +1926,7 @@ def eigen_factorize_cov_mat(
     cov_mat: CovarianceMatrix,
     n_pc: int,
     random_state: Optional[Union[int, RandomState, Generator]] = None,
-) -> CovViaEigendecomposition:
+) -> CovViaEigenFactorization:
     """
     Return an eigen factorized covariance matrix from the input covariance matrix.
 
@@ -1998,12 +1947,47 @@ def eigen_factorize_cov_mat(
 
     Returns
     -------
-    CovViaEigendecomposition
+    CovViaEigenFactorization
         Decomposed matrix instance.
     """
-    if isinstance(cov_mat, CovViaEigendecomposition):
+    if isinstance(cov_mat, CovViaEigenFactorization):
         return cov_mat
-    return CovViaEigendecomposition(
+    return CovViaEigenFactorization(
+        get_matrix_eigen_factorization(cov_mat, n_pc, random_state)
+    )
+
+
+def svds_factorize_cov_mat(
+    cov_mat: CovarianceMatrix,
+    n_pc: int,
+    random_state: Optional[Union[int, RandomState, Generator]] = None,
+) -> CovViaEigenFactorization:
+    """
+    Return an eigen factorized covariance matrix from the input covariance matrix.
+
+    Parameters
+    ----------
+    cov_mat : CovarianceMatrix
+        The covariance matrix instance to decompose.
+    n_pc : int
+        Number of principal component in the matrix.
+    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
+        Pseudorandom number generator state used to generate resamples.
+        If `random_state` is ``None`` (or `np.random`), the
+        `numpy.random.RandomState` singleton is used.
+        If `random_state` is an int, a new ``RandomState`` instance is used,
+        seeded with `random_state`.
+        If `random_state` is already a ``Generator`` or ``RandomState``
+        instance then that instance is used.
+
+    Returns
+    -------
+    CovViaEigenFactorization
+        Decomposed matrix instance.
+    """
+    if isinstance(cov_mat, CovViaEigenFactorization):
+        return cov_mat
+    return CovViaEigenFactorization(
         get_matrix_eigen_factorization(cov_mat, n_pc, random_state)
     )
 

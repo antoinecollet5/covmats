@@ -43,10 +43,10 @@ Once you have a copy of the source, you can install it with:
 Tutorials
 ---------
 
-For a quick overview of nested-grid-plotter functionality, see the :ref:`user guide<user_guide_ref>`.
+For a quick overview of covmats functionality, see the :ref:`user guide<user_guide_ref>`.
 
-You can also refer to the :ref:`reference guide<api_reference_ref>` for an exhaustive
-list of all what is possible with nested-grid-plotter.
+You can also refer to the :ref:`reference guide<api_ref>` for an exhaustive
+list of all what is possible with covmats.
 
 .. _Github repo: https://github.com/antoinecollet5/covmats
 .. _tarball: https://github.com/antoinecollet5/covmats/tarball/master

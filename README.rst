@@ -1,6 +1,6 @@
-======
+=======
 covmats
-======
+=======
 
 |License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Ruff| |ty| |DOI|
 
