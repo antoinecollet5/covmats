@@ -14,6 +14,7 @@ from __future__ import annotations
 import abc
 import logging
 from abc import abstractmethod
+from functools import cached_property
 from time import time
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
@@ -1353,8 +1354,9 @@ class CovViaEnsemble(CovarianceMatrix):
             shape=(ensemble.shape[1], ensemble.shape[1]), log_pdet=0.0, rank=0
         )
         self.ensemble = ensemble
+        # TODO Add SVD of anomalies
 
-    @property
+    @cached_property
     def anomalies(self) -> NDArrayFloat:
         """
         Return the matrix of anomalies.
@@ -1362,7 +1364,7 @@ class CovViaEnsemble(CovarianceMatrix):
         """
         return self.ensemble - np.mean(self.ensemble, axis=0, keepdims=True)
 
-    @property
+    @cached_property
     def n_ens(self) -> int:
         """Return the number of members in the ensemble."""
         return self.ensemble.shape[0]
@@ -1371,13 +1373,21 @@ class CovViaEnsemble(CovarianceMatrix):
         """Return the covariance matrix times the vector x (dot product)."""
         return np.linalg.multi_dot([self.anomalies.T, self.anomalies, x]) / (
             self.n_ens - 1
-        )  # type: ignore
+        )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._LP)
+        # TODO with SVD of anomaly matrix
+        raise NotImplementedError(
+            "`whitening` is not implemented for an ensemble matrix yet!\n"
+            "Please be patient!"
+        )
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._sqrt_diagonal)
+        # TODO with SVD of anomaly matrix
+        raise NotImplementedError(
+            "`colorize` is not implemented for an ensemble matrix yet!\n"
+            "Please be patient!"
+        )
 
     def _todense(self) -> NDArrayFloat:
         """
@@ -1475,10 +1485,16 @@ class CovViaFFT(CovViaKernel):
         )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._LP)
+        # TODO maybe at the kernel level ?
+        raise NotImplementedError(
+            "`whiten` is not implemented for a FFT matrix yet!\nPlease be patient!"
+        )
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._sqrt_diagonal)
+        # TODO maybe at the kernel level ?
+        raise NotImplementedError(
+            "`colorize` is not implemented for a FFT matrix yet!\nPlease be patient!"
+        )
 
     def solve(
         self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
@@ -1631,10 +1647,18 @@ class CovViaSparsePrecision(CovarianceMatrix):
         return self._sparse_cho_factor(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._LP)
+        # TODO
+        raise NotImplementedError(
+            "`colorize` is not implemented for a sparse precision matrix yet!\n"
+            "Please be patient!"
+        )
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x, self._sqrt_diagonal)
+        # TODO
+        raise NotImplementedError(
+            "`colorize` is not implemented for a sparse precision matrix yet!\n"
+            "Please be patient!"
+        )
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return $A^{-1} b."""
@@ -1704,16 +1728,29 @@ class CovViaSparseCholesky(CovarianceMatrix):
         return self._sparse_cho_factor(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        m = x.T.shape[0]
-        res = sp.linalg.solve_triangular(self._factor, x.T.reshape(m, -1), lower=True)
-        return res.reshape(x.T.shape).T
+        # TODO
+        raise NotImplementedError(
+            "`whiten` is not implemented for a sparse cholesky matrix yet!\n"
+            "Please be patient!"
+        )
+        # m = x.T.shape[0]
+        # res = sp.linalg.solve_triangular(self._factor, x.T.reshape(m, -1), lower=True)
+        # return res.reshape(x.T.shape).T
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._factor.T
+        # TODO
+        raise NotImplementedError(
+            "`colorize` is not implemented for a sparse cholesky matrix yet!\n"
+            "Please be patient!"
+        )
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
+        # TODO
+        raise NotImplementedError(
+            "`solve` is not implemented for a sparse cholesky matrix yet!\n"
+            "Please be patient!"
+        )
 
 
 class CovViaEigenFactorization(CovarianceMatrix):
@@ -1780,6 +1817,9 @@ class CovViaEigenFactorization(CovarianceMatrix):
         Check whether x lies in the support of the distribution.
         """
         # TODO: this is not correct either
+        raise NotImplementedError(
+            "_support_mask is not implemented for EigenFactorization"
+        )
         residual = np.linalg.norm(x @ self._null_basis, axis=-1)
         in_support = residual < self._eps
         return in_support
