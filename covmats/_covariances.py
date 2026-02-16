@@ -158,6 +158,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         "_logp_det",
         "_dense_mat",
         "_allow_singular",
+        "_subspace_size",
     ]
 
     def __init__(self, shape: Tuple[int, int], log_pdet: float, rank: int) -> None:
@@ -177,6 +178,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         self._dense_mat: NDArrayFloat = np.array([])
         self.dtype = np.dtype("d")  # float64 for LinearOperator
         self._shape = shape
+        self._subspace_size = shape[0]
 
     @property
     def number_pts(self) -> int:
@@ -990,6 +992,77 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         True
         """
         return self._colorize(np.asarray(x))
+
+    def sample_mvnormal(
+        self,
+        shape: Sequence[int],
+        random_state: Optional[Union[int, RandomState, Generator]] = None,
+    ) -> NDArrayFloat:
+        """
+        Draw samples from the multivariate normal N(0, Q).
+
+        Parameters
+        ----------
+        shape: Sequence[int]
+            Number of random vectors to sample. The resulting array will be of shape
+            (*shape, n), n being the number of elements per random vector
+            (the covariance) matrix has shape (n, n).
+        random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
+            Pseudorandom number generator state used to generate resamples.
+            If `random_state` is ``None`` (or `np.random`), the
+            `numpy.random.RandomState` singleton is used.
+            If `random_state` is an int, a new ``RandomState`` instance is used,
+            seeded with `random_state`.
+            If `random_state` is already a ``Generator`` or ``RandomState``
+            instance then that instance is used. The default is None.
+
+        Return
+        ------
+        X: The transformed array of points. It has shape (*input shape, n), n being
+        the number of elements per random vector (the covariance)
+        matrix has shape (n, n).
+
+        Examples
+        --------
+        >>> covd = CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
+        >>> rng_seed = 42
+        >>> covd.sample_mvnormal(shape=[2], random_state=rng_seed)
+        array([[ 1.11068661, -0.43723011,  2.50848692],
+            [ 3.40559829, -0.74045799, -0.90680853]])
+        >>> x = covd.sample_mvnormal(shape=[2, 4], random_state=rng_seed)
+        >>> x
+        array([[[ 1.11068661, -0.43723011,  2.50848692],
+                [ 3.40559829, -0.74045799, -0.90680853],
+                [ 3.53122721,  2.4268417 , -1.81826648],
+                [ 1.21320114, -1.46545542, -1.80376358]],
+
+            [[ 0.54104409, -6.05032338, -6.68057804],
+                [-1.25731314, -3.20285323,  1.21707469],
+                [-2.03040356, -4.46609644,  5.67643327],
+                [-0.50485116,  0.21354293, -5.518026  ]]])
+        >>> x.shape
+        (2, 4, 3)
+        >>> cov_cho = covmats.CovViaCholesky(sp.linalg.cholesky(covd.todense()))
+        >>> cov_cho.sample_mvnormal(shape=[2], random_state=rng_seed)
+        array([[-0.95777013, -1.11354406,  2.06162461],
+            [ 0.81715777,  1.30517512,  1.66856257]])
+        >>> cov_cho.sample_mvnormal(shape=[2, 2], random_state=rng_seed)
+        array([[[ 1.11068661, -0.43723011,  2.50848692],
+                [ 3.40559829, -0.74045799, -0.90680853],
+                [ 3.53122721,  2.4268417 , -1.81826648],
+                [ 1.21320114, -1.46545542, -1.80376358]],
+
+            [[ 0.54104409, -6.05032338, -6.68057804],
+                [-1.25731314, -3.20285323,  1.21707469],
+                [-2.03040356, -4.46609644,  5.67643327],
+                [-0.50485116,  0.21354293, -5.518026  ]]])
+        """
+        # A 1D diagonal of a covariance matrix was passed
+        return self._colorize(
+            check_random_state(seed=random_state).standard_normal(
+                size=(*shape, self._subspace_size)
+            )
+        )
 
 
 class CovViaKernel(CovarianceMatrix, abc.ABC):
