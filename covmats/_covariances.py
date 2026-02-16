@@ -306,6 +306,29 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
             raise ValueError(message)
         return A
 
+    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs @ x."""
+        return self._matvec(x)
+
+    def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs @ X."""
+        return self._matvec(X)
+
+    def add_inflated(self, mat: NDArrayFloat, inflation: float = 1.0) -> NDArrayFloat:
+        """Add the inflated covariance matrix to the given matrix."""
+        # Add the R matrix
+        if self.mat.ndim == 2:
+            return mat + inflation * self.mat
+        # Ri is diagonal
+        np.fill_diagonal(mat, mat.diagonal() + inflation * self.mat)
+        return mat
+
+    def __add__(self, x: NDArrayFloat) -> NDArrayFloat:
+        return self.add_inflated(x, 1.0)
+
+    def __sub__(self, x: NDArrayFloat) -> NDArrayFloat:
+        return self.add_inflated(x, -1.0)
+
     @staticmethod
     def from_dense(dense):
         r"""
@@ -487,68 +510,69 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         return CovViaEnsemble(ensemble)
 
-    @staticmethod
-    def from_kernel_fft(fft, covariance: Optional[NDArrayFloat]):
-        r"""
-        Return a representation of a covariance from its precision matrix.
+    # TODO
+    # @staticmethod
+    # def from_kernel_fft(fft, covariance: Optional[NDArrayFloat]):
+    #     r"""
+    #     Return a representation of a covariance from its precision matrix.
 
-        Parameters
-        ----------
-        precision : array_like
-            The precision matrix; that is, the inverse of a square, symmetric,
-            positive definite covariance matrix.
-        covariance : array_like, optional
-            The square, symmetric, positive definite covariance matrix. If not
-            provided, this may need to be calculated (e.g. to evaluate the
-            cumulative distribution function of
-            `scipy.stats.multivariate_normal`) by inverting `precision`.
+    #     Parameters
+    #     ----------
+    #     precision : array_like
+    #         The precision matrix; that is, the inverse of a square, symmetric,
+    #         positive definite covariance matrix.
+    #     covariance : array_like, optional
+    #         The square, symmetric, positive definite covariance matrix. If not
+    #         provided, this may need to be calculated (e.g. to evaluate the
+    #         cumulative distribution function of
+    #         `scipy.stats.multivariate_normal`) by inverting `precision`.
 
-        Notes
-        -----
-        Let the covariance matrix be :math:`A`, its precision matrix be
-        :math:`P = A^{-1}`, and :math:`L` be the lower Cholesky factor such
-        that :math:`L L^T = P`.
-        Whitening of a data point :math:`x` is performed by computing
-        :math:`x^T L`. :math:`\log\det{A}` is calculated as
-        :math:`-2tr(\log{L})`, where the :math:`\log` operation is performed
-        element-wise.
+    #     Notes
+    #     -----
+    #     Let the covariance matrix be :math:`A`, its precision matrix be
+    #     :math:`P = A^{-1}`, and :math:`L` be the lower Cholesky factor such
+    #     that :math:`L L^T = P`.
+    #     Whitening of a data point :math:`x` is performed by computing
+    #     :math:`x^T L`. :math:`\log\det{A}` is calculated as
+    #     :math:`-2tr(\log{L})`, where the :math:`\log` operation is performed
+    #     element-wise.
 
-        This `Covariance` class does not support singular covariance matrices
-        because the precision matrix does not exist for a singular covariance
-        matrix.
+    #     This `Covariance` class does not support singular covariance matrices
+    #     because the precision matrix does not exist for a singular covariance
+    #     matrix.
 
-        Examples
-        --------
-        Prepare a symmetric positive definite precision matrix ``P`` and a
-        data point ``x``. (If the precision matrix is not already available,
-        consider the other factory methods of the `Covariance` class.)
+    #     Examples
+    #     --------
+    #     Prepare a symmetric positive definite precision matrix ``P`` and a
+    #     data point ``x``. (If the precision matrix is not already available,
+    #     consider the other factory methods of the `Covariance` class.)
 
-        >>> import numpy as np
-        >>> from scipy import stats
-        >>> rng = np.random.default_rng()
-        >>> n = 5
-        >>> P = rng.random(size=(n, n))
-        >>> P = P @ P.T  # a precision matrix must be positive definite
-        >>> x = rng.random(size=n)
+    #     >>> import numpy as np
+    #     >>> from scipy import stats
+    #     >>> rng = np.random.default_rng()
+    #     >>> n = 5
+    #     >>> P = rng.random(size=(n, n))
+    #     >>> P = P @ P.T  # a precision matrix must be positive definite
+    #     >>> x = rng.random(size=n)
 
-        Create the `Covariance` object.
+    #     Create the `Covariance` object.
 
-        >>> cov = stats.Covariance.from_precision(P)
+    #     >>> cov = stats.Covariance.from_precision(P)
 
-        Compare the functionality of the `Covariance` object against
-        reference implementations.
+    #     Compare the functionality of the `Covariance` object against
+    #     reference implementations.
 
-        >>> res = cov.whiten(x)
-        >>> ref = x @ np.linalg.cholesky(P)
-        >>> np.allclose(res, ref)
-        True
-        >>> res = cov.log_pdet
-        >>> ref = -np.linalg.slogdet(P)[-1]
-        >>> np.allclose(res, ref)
-        True
+    #     >>> res = cov.whiten(x)
+    #     >>> ref = x @ np.linalg.cholesky(P)
+    #     >>> np.allclose(res, ref)
+    #     True
+    #     >>> res = cov.log_pdet
+    #     >>> ref = -np.linalg.slogdet(P)[-1]
+    #     >>> np.allclose(res, ref)
+    #     True
 
-        """
-        return CovViaFFT()
+    #     """
+    #     return CovViaFFT()
 
     @staticmethod
     def from_precision(
