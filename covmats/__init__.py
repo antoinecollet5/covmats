@@ -43,7 +43,7 @@ Eigen decomposition
 .. autosummary::
    :toctree: _autosummary
 
-    get_matrix_eigen_factorization
+    get_linop_eigen_factorization
     eigen_factorize_cov_mat
 
 Working with priors and trends
@@ -91,9 +91,8 @@ from covmats._covariances import (
     CovViaSparseCholesky,
     CovViaSparsePrecision,
     eigen_factorize_cov_mat,
-    generate_dense_matrix,
     get_explained_var,
-    get_matrix_eigen_factorization,
+    get_linop_eigen_factorization,
 )
 from covmats._priors import (
     ConstantDriftMatrix,
@@ -127,11 +126,10 @@ __all__ = [
     "DriftMatrix",
     "ConstantDriftMatrix",
     "LinearDriftMatrix",
-    "get_matrix_eigen_factorization",
     "get_explained_var",
+    "get_linop_eigen_factorization",
     "eigen_factorize_cov_mat",
     "sample_from_sparse_cov_factor",
-    "generate_dense_matrix",
     "__version__",
     "__email__",
     "__author__",
