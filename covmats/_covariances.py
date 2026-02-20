@@ -240,6 +240,13 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         """
         return np.array(self._rank, dtype=int)[()]
 
+    @property
+    def subspace_size(self) -> int:
+        """
+        Subspace size of the covariance matrix.
+        """
+        return self._subspace_size
+
     def _todense(self) -> NDArrayFloat:
         """
         Explicit dense representation of the covariance matrix.
@@ -500,7 +507,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         # A 1D diagonal of a covariance matrix was passed
         return self._colorize(
             check_random_state(seed=random_state).standard_normal(
-                size=(*shape, self._subspace_size)
+                size=(*shape, self.subspace_size)
             )
         )
 
@@ -570,8 +577,9 @@ class CovViaDense(CovarianceMatrix):
     ) -> None:
         super().__init__(
             (dense_mat.shape[0], dense_mat.shape[0]),
-            log_pdet=np.log(sp.linalg.det(dense_mat)),
-            rank=np.linalg.matrix_rank(dense_mat),
+            # TODO: make it as cached attribute
+            log_pdet=0.0,  # np.log(sp.linalg.det(dense_mat)),
+            rank=0.0,  # np.linalg.matrix_rank(dense_mat),
         )
         self._allow_singular = True
         # must be initialized after
@@ -809,6 +817,13 @@ class CovViaEnsemble(CovarianceMatrix):
     def n_ens(self) -> int:
         """Return the number of members in the ensemble."""
         return self.ensemble.shape[0]
+
+    @property
+    def subspace_size(self) -> int:
+        """
+        Subspace size of the covariance matrix.
+        """
+        return self.n_ens
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x (dot product)."""
@@ -1292,7 +1307,7 @@ class CovViaSparsePrecision(CovarianceMatrix):
 
         super().__init__(
             shape=sparse_precision.shape,
-            log_pdet=self._sparse_cho_factor.log_pdet,
+            log_pdet=0.0,  # self._sparse_cho_factor.log_pdet, TODO
             rank=sparse_precision.shape[-1],  # must be full rank if invertible
         )
 
@@ -1570,6 +1585,38 @@ class CovViaEigenFactorization(CovarianceMatrix):
             rank=self.n_pc,
         )
 
+    @property
+    def n_pc(self) -> int:
+        """
+        Return the number of eigen vectors/values, i.e. principal components.
+
+        It is determined from the eigen values vector size.
+        """
+        return self._w.size
+
+    @property
+    def subspace_size(self) -> int:
+        return self.n_pc
+
+    @property
+    def eig_vals(self) -> NDArrayFloat:
+        """Return the Eigen values."""
+        return self._w
+
+    @property
+    def eig_vects(self) -> NDArrayFloat:
+        """Return the Eigen vectors."""
+        return self._v
+
+    def get_diagonal(self) -> NDArrayFloat:
+        """
+        Return the diagonal entries of the matrix (variances).
+        """
+        return np.sum(((self._v.T * np.sqrt(self._w)) ** 2), axis=0)
+
+    def _todense(self) -> NDArrayFloat:
+        return np.dot(self._v, np.multiply(self._w, self._v.T))
+
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         # shape (r, n)
         return (
@@ -1577,11 +1624,7 @@ class CovViaEigenFactorization(CovarianceMatrix):
         ) @ x  # x @ self._LP
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # shape (n, r)
-        return (self._v * np.sqrt(self._w)) @ x  # TODO: this is not correct
-
-    def _todense(self):
-        return (self._v * self._w) @ self._v.T
+        return x @ (self._v.T * np.sqrt(self._w))
 
     def _support_mask(self, x):
         """
@@ -1595,20 +1638,19 @@ class CovViaEigenFactorization(CovarianceMatrix):
         in_support = residual < self._eps
         return in_support
 
-    @property
-    def n_pc(self) -> int:
-        """
-        Return the number of eigen vectors/values, i.e. principal components.
-
-        It is determined from the eigen values vector size.
-        """
-        return self._w.size
-
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
         return np.dot(
             self._v,
             np.multiply(self._w, np.dot(self._v.T, x.reshape(-1, 1))),
+        )
+
+    def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        assert np.shape(X)[0] == self.shape[0]
+        return np.dot(
+            self._v,
+            np.multiply(self._w, np.dot(self._v.T, X)),
         )
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
@@ -1637,9 +1679,6 @@ class CovViaEigenFactorization(CovarianceMatrix):
             np.multiply(1.0 / self._w, np.dot(self._v.T, b.reshape(-1, ne))),
         )
 
-    def _todense(self) -> NDArrayFloat:
-        return np.dot(self._v, np.multiply(self._w, self._v.T))
-
     def get_sparse_LLT_factor(self) -> csc_array:
         """
         Return the sparse factor L of the LL^T factorization of the eigen matrix.
@@ -1655,14 +1694,6 @@ class CovViaEigenFactorization(CovarianceMatrix):
         sp_mat.resize(self.shape)
         # 3) Convert to column format
         return sp_mat.tocsc()
-
-    @property
-    def eig_vals(self) -> NDArrayFloat:
-        return self._w
-
-    @property
-    def eig_vects(self) -> NDArrayFloat:
-        return self._v
 
 
 def get_linop_eigen_factorization(
