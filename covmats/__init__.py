@@ -25,12 +25,11 @@ Various representation of covariance matrices.
 .. autosummary::
    :toctree: _autosummary
 
-    CovViaDense
     CovViaDiagonal
     CovViaCholesky
     CovViaSparseCholesky
-    CovViaPrecision
-    CovViaSparsePrecision
+    CovViaPrecisionCholesky
+    CovViaSparsePrecisionCholesky
     CovViaEigenFactorization
     CovViaEnsemble
     CovViaFFT
@@ -81,15 +80,14 @@ from covmats.__about__ import __author__, __email__, __version__
 from covmats._covariances import (
     CovarianceMatrix,
     CovViaCholesky,
-    CovViaDense,
     CovViaDiagonal,
     CovViaEigenFactorization,
     CovViaEnsemble,
     CovViaFFT,
     CovViaKernel,
-    CovViaPrecision,
+    CovViaPrecisionCholesky,
     CovViaSparseCholesky,
-    CovViaSparsePrecision,
+    CovViaSparsePrecisionCholesky,
     eigen_factorize_cov_mat,
     get_explained_var,
     get_linop_eigen_factorization,
@@ -105,15 +103,15 @@ from covmats._priors import (
     PriorTerm,
 )
 from covmats._sparse_helpers import sample_from_sparse_cov_factor
+from covmats.data import load_precision_example_4225x
 
 __all__ = [
     "CovarianceMatrix",
-    "CovViaDense",
     "CovViaDiagonal",
     "CovViaCholesky",
     "CovViaSparseCholesky",
-    "CovViaPrecision",
-    "CovViaSparsePrecision",
+    "CovViaPrecisionCholesky",
+    "CovViaSparsePrecisionCholesky",
     "CovViaEigenFactorization",
     "CovViaEnsemble",
     "CovViaFFT",
@@ -133,4 +131,5 @@ __all__ = [
     "__version__",
     "__email__",
     "__author__",
+    "load_precision_example_4225x",
 ]

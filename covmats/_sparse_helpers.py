@@ -3,8 +3,7 @@
 
 """Wrap the sparse cholesky factorization from"""
 
-from functools import cached_property
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 from scipy.sparse import csc_array, csc_matrix, find
@@ -28,9 +27,27 @@ except (ImportError, ModuleNotFoundError):
 
         def __call__(self, values: np.ndarray) -> np.ndarray: ...
 
-        @cached_property
-        def log_pdet(self):
-            return (-2 * np.log(np.diag(self._chol_P)).sum(axis=-1),)
+        def D(self) -> NDArrayFloat:  # ty:ignore[empty-body]
+            ...
+
+        def L(self) -> NDArrayFloat:  # ty:ignore[empty-body]
+            ...
+
+        def apply_P(self, x: NDArrayFloat) -> NDArrayFloat:  # ty:ignore[empty-body]
+            ...
+
+        def apply_Pt(self, x: NDArrayFloat) -> NDArrayFloat:  # ty:ignore[empty-body]
+            ...
+
+        def solve_Lt(self, x: NDArrayFloat) -> NDArrayFloat:  # ty:ignore[empty-body]
+            ...
+
+        def slogdet(self) -> float:  # ty:ignore[empty-body]
+            ...
+
+        @property
+        def shape(self) -> Tuple[int, int]:  # ty:ignore[empty-body]
+            ...
 
     def cholesky(mat: csc_matrix) -> SparseChoFactor:
         raise ModuleNotFoundError(

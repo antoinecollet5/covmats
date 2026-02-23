@@ -1,15 +1,9 @@
 """Some tests to refactor."""
 
+import covmats
 import numpy as np
 import pytest
-from covmats import (
-    CovViaDense,
-    CovViaEnsemble,
-    CovViaFFT,
-    eigen_factorize_cov_mat,
-    get_explained_var,
-    sample_from_sparse_cov_factor,
-)
+import scipy as sp
 from covmats._types import NDArrayFloat
 
 
@@ -17,10 +11,126 @@ def test_get_shape() -> None:
     """A test to see if all matrice handle the shape and npts correctly."""
 
 
+def test_CovViaDiagonal() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = np.diag(rng.random(n))
+    x = rng.random(size=n)
+
+    d = np.diag(A)
+    cov = covmats.CovViaDiagonal(d)
+
+    res = cov.whiten(x)
+    ref = np.diag(d**-0.5) @ x
+    assert np.allclose(res, ref)
+
+    res = cov.log_pdet
+    ref = np.linalg.slogdet(A)[-1]
+    assert np.allclose(res, ref)
+
+
+def test_CovViaCholesky_log_pdet() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
+    x = rng.random(size=n)
+
+    L = np.linalg.cholesky(A)
+    cov = covmats.CovViaCholesky(L)
+
+    res = cov.whiten(x)
+    ref = sp.linalg.solve_triangular(L, x, lower=True)
+    assert np.allclose(res, ref)
+
+    res = cov.log_pdet
+    ref = np.linalg.slogdet(A)[-1]
+    assert np.allclose(res, ref)
+
+
+def test_CovViaDioagonal_mvnormal() -> None:
+
+    covd = covmats.CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
+    rng_seed = 42
+    covd.sample_mvnormal(shape=[2], random_state=rng_seed)
+    x = covd.sample_mvnormal(shape=[2, 4], random_state=rng_seed)
+    np.testing.assert_allclose(
+        x,
+        np.array(
+            [
+                [
+                    [1.11068661, -0.43723011, 2.50848692],
+                    [3.40559829, -0.74045799, -0.90680853],
+                    [3.53122721, 2.4268417, -1.81826648],
+                    [1.21320114, -1.46545542, -1.80376358],
+                ],
+                [
+                    [0.54104409, -6.05032338, -6.68057804],
+                    [-1.25731314, -3.20285323, 1.21707469],
+                    [-2.03040356, -4.46609644, 5.67643327],
+                    [-0.50485116, 0.21354293, -5.518026],
+                ],
+            ]
+        ),
+    )
+    assert x.shape == (2, 4, 3)
+
+
+def test_CovViaCholesky_mvnormal() -> None:
+
+    covd = covmats.CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
+    cov_cho = covmats.CovViaCholesky(sp.linalg.cholesky(covd.todense()))
+
+    rng_seed = 42
+    covd.sample_mvnormal(shape=[2], random_state=rng_seed)
+    x = cov_cho.sample_mvnormal(shape=[2, 4], random_state=rng_seed)
+    np.testing.assert_allclose(
+        x,
+        np.array(
+            [
+                [
+                    [1.11068661, -0.43723011, 2.50848692],
+                    [3.40559829, -0.74045799, -0.90680853],
+                    [3.53122721, 2.4268417, -1.81826648],
+                    [1.21320114, -1.46545542, -1.80376358],
+                ],
+                [
+                    [0.54104409, -6.05032338, -6.68057804],
+                    [-1.25731314, -3.20285323, 1.21707469],
+                    [-2.03040356, -4.46609644, 5.67643327],
+                    [-0.50485116, 0.21354293, -5.518026],
+                ],
+            ]
+        ),
+    )
+    assert x.shape == (2, 4, 3)
+
+
+def test_CovViaPrecisionCholesky() -> None:
+
+    rng = np.random.default_rng()
+    n = 5
+    P = rng.random(size=(n, n))
+    P = P @ P.T  # a precision matrix must be positive definite
+    x = rng.random(size=n)
+
+    cov = covmats.CovViaPrecisionCholesky(np.linalg.cholesky(P))
+
+    res = cov.whiten(x)
+    ref = x @ np.linalg.cholesky(P)
+    assert np.allclose(res, ref)
+
+    res = cov.log_pdet
+    ref = -np.linalg.slogdet(P)[-1]
+    assert np.allclose(res, ref)
+
+
 def test_ensemble_covariance_matrix() -> None:
     """Test the inversion."""
 
-    cov = CovViaEnsemble(np.random.default_rng(2023).random((200, 77)))
+    cov = covmats.CovViaEnsemble(np.random.default_rng(2023).random((200, 77)))
     x = np.random.default_rng(2023).random(77)
 
     np.testing.assert_allclose(cov.solve(x), np.linalg.inv(cov.todense()).dot(x))
@@ -44,7 +154,7 @@ def test_fft_covariance_matrix() -> None:
     len_scale = np.array([1, 1])
     mesh_dim = (dx, dy)
 
-    cov = CovViaFFT(
+    cov = covmats.CovViaFFT(
         exponential_kernel,
         mesh_dim=mesh_dim,
         domain_shape=param_shape,
@@ -80,7 +190,7 @@ def test_eigen_decompose_and_associated_functions() -> None:
     len_scale = np.array([1, 1])
     mesh_dim = (dx, dy)
 
-    cov_mat_fft = CovViaFFT(
+    cov_mat_fft = covmats.CovViaFFT(
         exponential_kernel,
         mesh_dim=mesh_dim,
         domain_shape=param_shape,
@@ -89,10 +199,10 @@ def test_eigen_decompose_and_associated_functions() -> None:
         is_use_preconditioner=True,
     )
 
-    eig_mat = eigen_factorize_cov_mat(cov_mat_fft, n_pc=100, random_state=25652)
+    eig_mat = covmats.eigen_factorize_cov_mat(cov_mat_fft, n_pc=100, random_state=25652)
     assert eig_mat.n_pc == 100
     # should return the matrix as is
-    eig_mat = eigen_factorize_cov_mat(eig_mat, 50)
+    eig_mat = covmats.eigen_factorize_cov_mat(eig_mat, 50)
     assert eig_mat.n_pc == 100  # and not 50 !
 
     # This is determined form the eigen vectors
@@ -104,11 +214,11 @@ def test_eigen_decompose_and_associated_functions() -> None:
     # The trace should be around 900 (225 * 2.0 ** 2)
     np.testing.assert_allclose(eig_mat.get_trace(), 900, rtol=0.05)
 
-    samples = sample_from_sparse_cov_factor(
+    samples = covmats.sample_from_sparse_cov_factor(
         np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 20
     )
     assert samples.shape == (225, 20)
-    samples = sample_from_sparse_cov_factor(
+    samples = covmats.sample_from_sparse_cov_factor(
         np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 10, random_state=2012
     )
     assert samples.shape == (225, 10)
@@ -116,16 +226,16 @@ def test_eigen_decompose_and_associated_functions() -> None:
 
     _trace = eig_mat.get_trace()
     # both covariance matrice instance and trace
-    get_explained_var(eig_mat.eig_vals, eig_mat, _trace)
+    covmats.get_explained_var(eig_mat.eig_vals, eig_mat, _trace)
     # no trace
-    get_explained_var(eig_mat.eig_vals, eig_mat)
+    covmats.get_explained_var(eig_mat.eig_vals, eig_mat)
     # no matrix
-    get_explained_var(eig_mat.eig_vals, trace_cov_mat=_trace)
+    covmats.get_explained_var(eig_mat.eig_vals, trace_cov_mat=_trace)
     # none
     with pytest.raises(
         ValueError, match="You must provide a Covariance matrix instance or the trace !"
     ):
-        get_explained_var(eig_mat.eig_vals)
+        covmats.get_explained_var(eig_mat.eig_vals)
 
 
 def test_negative_eigen_values() -> None:
@@ -135,9 +245,9 @@ def test_negative_eigen_values() -> None:
     V = np.diag([5.0, 4.0, -1.0, -2.0])
 
     # This is the dense matrix to decompose
-    cov_mat = CovViaDense(U @ V @ U.T)
+    cov_mat = U @ V @ U.T
 
-    cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2023)
+    cov_mat_eigen = covmats.eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2023)
     assert cov_mat_eigen.n_pc == 2
     assert cov_mat_eigen.eig_vects.size == 8
 
@@ -184,14 +294,14 @@ def test_negative_eigen_values() -> None:
 #     assert cov_mat.get_diagonal().size == nx * ny
 
 
-def test_dense_covariance_matrix() -> None:
-    cov = CovViaDense(np.arange(1, 10).reshape(3, 3).astype(np.float64))
-    np.testing.assert_array_equal(
-        cov @ np.ones(3, dtype=np.float64), np.array([6.0, 15.0, 24.0])
-    )
-    np.testing.assert_array_equal(cov.T @ np.ones(3), np.array([12.0, 15.0, 18.0]))
-    np.testing.assert_array_equal(cov.get_diagonal(), np.array([1.0, 5.0, 9.0]))
-    assert cov.get_trace() == 15.0
+# def test_dense_covariance_matrix() -> None:
+#     cov = CovViaDense(np.arange(1, 10).reshape(3, 3).astype(np.float64))
+#     np.testing.assert_array_equal(
+#         cov @ np.ones(3, dtype=np.float64), np.array([6.0, 15.0, 24.0])
+#     )
+#     np.testing.assert_array_equal(cov.T @ np.ones(3), np.array([12.0, 15.0, 18.0]))
+#     np.testing.assert_array_equal(cov.get_diagonal(), np.array([1.0, 5.0, 9.0]))
+#     assert cov.get_trace() == 15.0
 
 
 # def test_that_man() -> None:

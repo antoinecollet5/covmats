@@ -4,11 +4,133 @@ covmats
 
 |License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Ruff| |ty| |DOI|
 
-🐍 Pure python covariance matrices representation.
+🐍 Covariance matrices representation.
 
 **The complete and up to date documentation can be found here**: https://covmats.readthedocs.io.
 
+===============
+🎯 Motivations
+===============
+
+Calculations involving covariance matrices (e.g. linear algebra, data whitening,
+multivariate normal function evaluation) are often performed more efficiently using
+a decomposition of the covariance matrix instead of the covariance matrix itself.
+For large scale application, a dense covariance matrix would not even fit in memory and
+one must rely on low-rank approxiations.
+This package allows the user to construct an object representing a covariance matrix
+using any of several decompositions/approximations and perform calculations using a
+common interface.
+
+The common interface `CovarianceMatrix` can be seen as a extension of the class
+`scipy.stats.Covariance <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
+as it inherits from it (thus making it compatible with all
+`scipy.stats <https://docs.scipy.org/doc/scipy/reference/stats.html>`_ functions and classes)
+and dope it with `LinearOperator` capabilities.
+
+The package is used in large-scale inversion packages such as
+`pypcga <https://github.com/antoinecollet5/pypcga>`_,
+`pyesmda <https://github.com/antoinecollet5/pyesmda>`_ and
+`pyrtid <https://github.com/antoinecollet5/pyrtid>`_.
+
+========================
+⚠️ BSD 3-Clause Licence
+========================
+
+This code is released under BSD 3-Clause Licence. However, the pieces of code involving
+sparse cholesky (add here) rely on
+`scikit-sparse <https://github.com/scikit-sparse/scikit-sparse>`_
+which itself depends on external libraries with GPL licenses, such as
+`SuiteSparse <https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file>`_.
+As a consequence these pieces of code must adopt that license as well.
+Please look into the terms of this license before creating a dynamic
+link to this pieces in your downstream package and understand
+commercial use limitations. We are not lawyers and cannot provide any
+guidance on the terms of this license.
+
+Please see https://www.gnu.org/licenses/licenses.html#LGPL
+
+===============
+🚀 Quick start
+===============
+
+To install `covmats`, the easiest way is through `pip`:
+
+.. code-block::
+
+    pip install covmats
+
+Or alternatively using `conda`
+
+.. code-block::
+
+    conda install covmats
+
+You might also clone the repository and install from source
+
+.. code-block::
+
+    pip install -e .
+
+Once the installation is done, `covmats` is straighforward to use and proposes the following covariance representations:
+
+- `CovViaDiagonal <https://covmats.readthedocs.io/api>`_
+- `CovViaCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaSparseCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaPrecisionCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaSparsePrecisionCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaEigendecomposition <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaEnsemble <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+
+Let's start by importing `numpy`, `scipy` and `covmats` for the tests and define a
+random number generator seed for reproducibility:
+
+.. code-block:: python
+
+    import numpy as np
+    import scipy as sp
+    import covmats
+
+    rng_seed = 2026
+
+First example with a diagonal covariance matrix
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In the following, we define a `(3 x 3)` covariance matrix defining only its diagonal (i.e., all elements of the random vectors are independent).
+Using scipy, it is possible to compute the pdf.
+
+.. code-block:: python
+
+    d = [1, 2, 3]
+    A33 = np.diag(d)  # a diagonal covariance matrix
+    x = [4, -2, 5]  # a point of interest
+    dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=A33)
+    dist.pdf(x)
+
+.. code-block:: python
+
+    np.float64(4.9595685102808205e-08)
+
+It is possible to obtain a dense representation in a straighforward manner:
+
+.. code-block:: python
+
+    cov_diag33 = covmats.CovViaDiagonal(d)
+    dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=cov_diag33)
+    dist.pdf(x)
+
+.. code-block:: python
+
+    np.float64(4.9595685102808205e-08)
+
+
+It is compatible with the stats API from scipy since the base class inherit from `Covariance`.
+
+
 🏗️ Complete example with supporting paper coming Q1 2026.
+
+FFT-based matvec code is adapted from Arvind Saibaba's work (https://github.com/arvindks/kle).
+
+FMM-based code (https://arxiv.org/abs/1903.02153) will be incorporated in version 0.2
 
 ===========
 🔑 License

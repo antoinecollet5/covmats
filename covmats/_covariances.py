@@ -27,20 +27,19 @@ from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, gmres
 from scipy.spatial.distance import cdist
 
-from covmats._helpers import check_random_state, get_pts_coords_regular_grid
+from covmats._helpers import (
+    check_random_state,
+    get_pts_coords_regular_grid,
+)
 from covmats._sparse_helpers import (
     SparseChoFactor,
     get_sparse_covmat_variance,
-    sparse_cholesky,
 )
 from covmats._toeplitz import (
     create_toepliz_first_row,
     toeplitz_product,
 )
-from covmats._types import (
-    NDArrayFloat,
-    NDArrayInt,
-)
+from covmats._types import ArrayLike, NDArrayFloat, NDArrayInt
 
 
 class CallBack:
@@ -103,7 +102,7 @@ def _gmres_wrapper(
 
 class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     """
-    Representation of a covariance matrix.
+    Abstract representation of a covariance matrix.
 
     Calculations involving covariance matrices (e.g. data whitening,
     multivariate normal function evaluation) are often performed more
@@ -115,38 +114,15 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     .. note::
 
         The `CovarianceMatrix` class cannot be instantiated directly. Instead, use
-        one of the factory methods (e.g. `Covariance.from_diagonal`).
+        one of the derived class:
 
-    Examples
-    --------
-    The `Covariance` class is used by calling one of its
-    factory methods to create a `Covariance` object, then pass that
-    representation of the `Covariance` matrix as a shape parameter of a
-    multivariate distribution.
-
-    For instance, the multivariate normal distribution can accept an array
-    representing a covariance matrix:
-
-    >>> from scipy import stats
-    >>> import numpy as np
-    >>> d = [1, 2, 3]
-    >>> A = np.diag(d)  # a diagonal covariance matrix
-    >>> x = [4, -2, 5]  # a point of interest
-    >>> dist = stats.multivariate_normal(mean=[0, 0, 0], cov=A)
-    >>> dist.pdf(x)
-    4.9595685102808205e-08
-
-    but the calculations are performed in a very generic way that does not
-    take advantage of any special properties of the covariance matrix. Because
-    our covariance matrix is diagonal, we can use ``Covariance.from_diagonal``
-    to create an object representing the covariance matrix, and
-    `multivariate_normal` can use this to compute the probability density
-    function more efficiently.
-
-    >>> cov = stats.Covariance.from_diagonal(d)
-    >>> dist = stats.multivariate_normal(mean=[0, 0, 0], cov=cov)
-    >>> dist.pdf(x)
-    4.9595685102808205e-08
+        - :py:class:`CovViaDiagonal`
+        - :py:class:`CovViaCholesky`
+        - :py:class:`CovViaSparseCholesky`
+        - :py:class:`CovViaPrecisionCholesky`
+        - :py:class:`CovViaSparsePrecisionCholesky`
+        - :py:class:`CovViaEigenFactorization`
+        - :py:class:`CovViaEnsemble`
 
     """
 
@@ -167,8 +143,12 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         Parameters
         ----------
-        shape: Tuple[int, int]
-            Shape of the matrix.
+        shape : Tuple[int, int]
+            Shape (n, n) of the covariance matrix.
+        log_pdet : float
+            Log pseudo determinant of the matrix.
+        rank : int
+            Rank of the matrix representation.
         """
         # counters
         self.count: int = 0
@@ -287,7 +267,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
             )
             raise ValueError(message)
 
-    def _validate_dense_matrix(self, A: NDArrayFloat, name: str) -> NDArrayFloat:
+    def _validate_dense_matrix(self, A: ArrayLike, name: str) -> NDArrayFloat:
         A = np.atleast_2d(A)
         self._validate_cov_mat(A, name)
         return A
@@ -344,7 +324,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         random variables with unit-diagonal covariance. When a whitening
         transform is applied to a sample of points distributed according to
         a multivariate normal distribution with zero mean, the covariance of
-        the transformed sample is approximately the identity matrix.
+        the transformed sample is approximately the identity matrix
+        :cite:p:`WhiteningTransformation2025, novakGeneralizationColoringLinear2019`.
 
         Parameters
         ----------
@@ -360,22 +341,22 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         References
         ----------
-        .. [1] "Whitening Transformation". Wikipedia.
-               https://en.wikipedia.org/wiki/Whitening_transformation
-        .. [2] Novak, Lukas, and Miroslav Vorechovsky. "Generalization of
-               coloring linear transformation". Transactions of VSB 18.2
-               (2018): 31-35. :doi:`10.31490/tces-2018-0013`
+        .. bibliography::
+            :filter: False
+
+            novakGeneralizationColoringLinear2019
+            WhiteningTransformation2025
 
         Examples
         --------
         >>> import numpy as np
-        >>> from scipy import stats
+        >>> import covmats
         >>> rng = np.random.default_rng()
         >>> n = 3
         >>> A = rng.random(size=(n, n))
         >>> cov_array = A @ A.T  # make matrix symmetric positive definite
         >>> precision = np.linalg.inv(cov_array)
-        >>> cov_object = stats.Covariance.from_precision(precision)
+        >>> cov_object = covmats.CovViaPrecisionCholesky(sp.linalg.cholesky(precision))
         >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
         >>> x_ = cov_object.whiten(x)
         >>> np.cov(x_, rowvar=False)  # near-identity covariance
@@ -400,7 +381,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         sample of points distributed according to a multivariate normal
         distribution with identity covariance and zero mean, the covariance of
         the transformed sample is approximately the covariance matrix used
-        in the coloring transform.
+        in the coloring transform
+        :cite:p:`WhiteningTransformation2025,novakGeneralizationColoringLinear2019`.
 
         Parameters
         ----------
@@ -416,22 +398,22 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         References
         ----------
-        .. [1] "Whitening Transformation". Wikipedia.
-               https://en.wikipedia.org/wiki/Whitening_transformation
-        .. [2] Novak, Lukas, and Miroslav Vorechovsky. "Generalization of
-               coloring linear transformation". Transactions of VSB 18.2
-               (2018): 31-35. :doi:`10.31490/tces-2018-0013`
+        .. bibliography::
+            :filter: False
+
+            WhiteningTransformation2025
+            novakGeneralizationColoringLinear2019
 
         Examples
         --------
         >>> import numpy as np
-        >>> from scipy import stats
+        >>> import covmats
         >>> rng = np.random.default_rng(1638083107694713882823079058616272161)
         >>> n = 3
         >>> A = rng.random(size=(n, n))
         >>> cov_array = A @ A.T  # make matrix symmetric positive definite
         >>> cholesky = np.linalg.cholesky(cov_array)
-        >>> cov_object = stats.Covariance.from_cholesky(cholesky)
+        >>> cov_object = covmats.CovViaCholesky(cholesky)
         >>> x = rng.multivariate_normal(np.zeros(n), np.eye(n), size=(10000))
         >>> x_ = cov_object.colorize(x)
         >>> cov_data = np.cov(x_, rowvar=False)
@@ -471,7 +453,10 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         Examples
         --------
-        >>> covd = CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
+        >>> import numpy as np
+        >>> import scipy as sp
+        >>> import covmats
+        >>> covd = covmats.CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
         >>> rng_seed = 42
         >>> covd.sample_mvnormal(shape=[2], random_state=rng_seed)
         array([[ 1.11068661, -0.43723011,  2.50848692],
@@ -482,8 +467,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
                 [ 3.40559829, -0.74045799, -0.90680853],
                 [ 3.53122721,  2.4268417 , -1.81826648],
                 [ 1.21320114, -1.46545542, -1.80376358]],
-
-            [[ 0.54104409, -6.05032338, -6.68057804],
+               [[ 0.54104409, -6.05032338, -6.68057804],
                 [-1.25731314, -3.20285323,  1.21707469],
                 [-2.03040356, -4.46609644,  5.67643327],
                 [-0.50485116,  0.21354293, -5.518026  ]]])
@@ -498,8 +482,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
                 [ 3.40559829, -0.74045799, -0.90680853],
                 [ 3.53122721,  2.4268417 , -1.81826648],
                 [ 1.21320114, -1.46545542, -1.80376358]],
-
-            [[ 0.54104409, -6.05032338, -6.68057804],
+               [[ 0.54104409, -6.05032338, -6.68057804],
                 [-1.25731314, -3.20285323,  1.21707469],
                 [-2.03040356, -4.46609644,  5.67643327],
                 [-0.50485116,  0.21354293, -5.518026  ]]])
@@ -511,108 +494,55 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
             )
         )
 
+    @classmethod
+    def from_cholesky(self, *args):
+        """Representation of a covariance provided via choleksy factorization.
 
-class CovViaDense(CovarianceMatrix):
-    r"""
-    Representation of a covariance in its dense form.
-
-    Parameters
-    ----------
-    cholesky : array_like
-        The lower triangular Cholesky factor of the covariance matrix.
-
-    Notes
-    -----
-    Let the covariance matrix be :math:`A` and :math:`L` be the lower
-    Cholesky factor such that :math:`L L^T = A`.
-    Whitening of a data point :math:`x` is performed by computing
-    :math:`L^{-1} x`. :math:`\log\det{A}` is calculated as
-    :math:`2tr(\log{L})`, where the :math:`\log` operation is performed
-    element-wise.
-
-    This `Covariance` class does not support singular covariance matrices
-    because the Cholesky decomposition does not exist for a singular
-    covariance matrix.
-
-    Examples
-    --------
-    Prepare a symmetric positive definite covariance matrix ``A`` and a
-    data point ``x``.
-
-    >>> import numpy as np
-    >>> from scipy import stats
-    >>> rng = np.random.default_rng()
-    >>> n = 5
-    >>> A = rng.random(size=(n, n))
-    >>> A = A @ A.T  # make the covariance symmetric positive definite
-    >>> x = rng.random(size=n)
-
-    Perform the Cholesky decomposition of ``A`` and create the
-    `Covariance` object.
-
-    >>> L = np.linalg.cholesky(A)
-    >>> cov = stats.Covariance.from_cholesky(L)
-
-    Compare the functionality of the `Covariance` object against
-    reference implementation.
-
-    >>> from scipy.linalg import solve_triangular
-    >>> res = cov.whiten(x)
-    >>> ref = solve_triangular(L, x, lower=True)
-    >>> np.allclose(res, ref)
-    True
-    >>> res = cov.log_pdet
-    >>> ref = np.linalg.slogdet(A)[-1]
-    >>> np.allclose(res, ref)
-    True
-
-    """
-
-    __slots__ = []
-
-    def __init__(
-        self,
-        dense_mat: NDArrayFloat,
-        nugget: float = 0,
-    ) -> None:
-        super().__init__(
-            (dense_mat.shape[0], dense_mat.shape[0]),
-            # TODO: make it as cached attribute
-            log_pdet=0.0,  # np.log(sp.linalg.det(dense_mat)),
-            rank=0.0,  # np.linalg.matrix_rank(dense_mat),
-        )
-        self._allow_singular = True
-        # must be initialized after
-        self._dense_mat = dense_mat
-        self.nugget = nugget
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return np.dot(self.covariance, x) * (1 + self.nugget)
-
-    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix conjugate transpose times the vector x."""
-        return np.dot(self.covariance.T, x)
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        .. error::
+            Removed from parent class, do not use.
+        """
         raise NotImplementedError(
-            "`whitening` is not implemented for a dense matrix!\n"
-            "Please decompose using SVD or Cholesky!"
+            "`from_cholesky` is not available, please instantiate"
+            " with `CovViaCholesky(...)` directly!"
         )
 
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+    @classmethod
+    def from_diagonal(self, *args):
+        """Representation of a covariance provided via diagonal.
+
+        .. error::
+            Removed from parent class, do not use.
+        """
         raise NotImplementedError(
-            "`colorize` is not implemented for a dense matrix!\n"
-            "Please decompose using SVD or Cholesky!"
+            "`from_diagonal` is not available, please instantiate"
+            " with `CovViaDiagonal(...)` directly!"
         )
 
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.solve(self.covariance, b, assume_a="sym")
+    @classmethod
+    def from_eigendecomposition(self, *args):
+        """
+        Representation of a covariance provided via eigendecomposition.
 
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self._dense_mat.diagonal()
+        .. error::
+            Removed from parent class, do not use.
+        """
+        raise NotImplementedError(
+            "`from_eigendecomposition` is not available, please instantiate"
+            " with `CovViaEigenFactorization(...)` directly!"
+        )
+
+    @classmethod
+    def from_precision(self, *args):
+        """
+        Return a representation of a covariance from its precision matrix.
+
+        .. error::
+            Removed from parent class, do not use.
+        """
+        raise NotImplementedError(
+            "`from_precision` is not available, please instantiate"
+            " with `CovViaPrecisionCholesky(...)` directly!"
+        )
 
 
 def _dot_diag(x: NDArrayFloat, d: NDArrayFloat):
@@ -624,7 +554,7 @@ def _dot_diag(x: NDArrayFloat, d: NDArrayFloat):
 
 class CovViaDiagonal(CovarianceMatrix):
     r"""
-    Representation of a covariance matrix from its diagonal.
+    Representation of a covariance matrix via its diagonal.
 
     Attributes
     ----------
@@ -656,7 +586,7 @@ class CovViaDiagonal(CovarianceMatrix):
     data point ``x``.
 
     >>> import numpy as np
-    >>> from scipy import stats
+    >>> import covmats
     >>> rng = np.random.default_rng()
     >>> n = 5
     >>> A = np.diag(rng.random(n))
@@ -665,7 +595,7 @@ class CovViaDiagonal(CovarianceMatrix):
     Extract the diagonal from ``A`` and create the `Covariance` object.
 
     >>> d = np.diag(A)
-    >>> cov = stats.Covariance.from_diagonal(d)
+    >>> cov = covmats.CovViaDiagonal(d)
 
     Compare the functionality of the `Covariance` object against a
     reference implementations.
@@ -683,13 +613,13 @@ class CovViaDiagonal(CovarianceMatrix):
 
     __slots__ = ["_diagonal"]
 
-    def __init__(self, diagonal: np.typing.ArrayLike) -> None:
+    def __init__(self, diagonal: ArrayLike) -> None:  # ty:ignore[possibly-missing-attribute]
         """
         Initialize the instance.
 
         Parameters
         ----------
-        diagonal : np.typing.ArrayLike
+        diagonal : ArrayLike
             The diagonal elements of a diagonal matrix.
         """
         _diagonal = self._validate_vector(
@@ -724,7 +654,7 @@ class CovViaDiagonal(CovarianceMatrix):
         return self.get_diagonal()[:, np.newaxis] * X
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _dot_diag(x.T, self._LP).T
+        return _dot_diag(x, self._LP)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return _dot_diag(x, self._sqrt_diagonal)
@@ -750,6 +680,684 @@ class CovViaDiagonal(CovarianceMatrix):
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
         return self._diagonal
+
+
+class CovViaCholesky(CovarianceMatrix):
+    r"""
+    Representation of a covariance via a Cholesky factorization.
+
+    Parameters
+    ----------
+    cholesky : array_like
+        The lower triangular Cholesky factor of the covariance matrix.
+
+    Notes
+    -----
+    Let the covariance matrix be :math:`A` and :math:`L` be the lower
+    Cholesky factor such that :math:`L L^T = A`.
+    Whitening of a data point :math:`x` is performed by computing
+    :math:`L^{-1} x`. :math:`\log\det{A}` is calculated as
+    :math:`2tr(\log{L})`, where the :math:`\log` operation is performed
+    element-wise.
+
+    This `Covariance` class does not support singular covariance matrices
+    because the Cholesky decomposition does not exist for a singular
+    covariance matrix.
+
+    Examples
+    --------
+    Prepare a symmetric positive definite covariance matrix ``A`` and a
+    data point ``x``.
+
+    >>> import numpy as np
+    >>> import covmats
+    >>> rng = np.random.default_rng()
+    >>> n = 5
+    >>> A = rng.random(size=(n, n))
+    >>> A = A @ A.T  # make the covariance symmetric positive definite
+    >>> x = rng.random(size=n)
+
+    Perform the Cholesky decomposition of ``A`` and create the
+    `Covariance` object.
+
+    >>> L = np.linalg.cholesky(A)
+    >>> cov = covmats.CovViaCholesky(L)
+
+    Compare the functionality of the `Covariance` object against
+    reference implementation.
+
+    >>> from scipy.linalg import solve_triangular
+    >>> res = cov.whiten(x)
+    >>> ref = solve_triangular(L, x, lower=True)
+    >>> np.allclose(res, ref)
+    True
+    >>> res = cov.log_pdet
+    >>> ref = np.linalg.slogdet(A)[-1]
+    >>> np.allclose(res, ref)
+    True
+
+    """
+
+    __slots__ = ["_cho_factor"]
+
+    def __init__(
+        self, cho_factor: ArrayLike, covariance: Optional[ArrayLike] = None
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        cho_factor : NDArrayFloat
+            Lower triangle of the covariance matrix Cholesky factorization.
+        covariance : Optional[NDArrayFloat], optional
+            Dense covariance matrix, by default None
+        """
+        self._cho_factor: NDArrayFloat = self._validate_matrix(cho_factor, "cho_factor")
+
+        n = np.shape(self._cho_factor)[0]
+        super().__init__(
+            shape=(n, n),
+            log_pdet=2 * np.log(np.diag(self._cho_factor)).sum(axis=-1),
+            rank=n,  # must be full rank if invertible
+        )
+        if covariance is not None:
+            self._dense_mat = self.validate_matrix(covariance)
+        self._allow_singular = False
+
+    def _todense(self) -> NDArrayFloat:
+        return self._cho_factor @ self._cho_factor.T
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        return np.linalg.multi_dot([self._cho_factor, self._cho_factor.T, x])
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        m = x.T.shape[0]
+        res = sp.linalg.solve_triangular(
+            self._cho_factor, x.T.reshape(m, -1), lower=True
+        )
+        return res.reshape(x.T.shape).T
+
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        return x @ self._cho_factor.T
+
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        """Solve Ax = b, with A, the current covariance matrix instance."""
+        return sp.linalg.cho_solve((self._cho_factor, True), b)
+
+
+def _sparse_cho_factor_colorize(
+    sparse_cho_factor: SparseChoFactor, x: NDArrayFloat
+) -> NDArrayFloat:
+    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
+    # We want to solve z = A x
+    # We use the cholesky factorization LDL' = PA'AP'
+    # with P' = P^{-1} the permutation that makes the decomposition unique.
+    # So LD^{1/2} = PA' and A = D^{1/2}L'P
+    # Finally z = D^{1/2}L'P x
+    return np.sqrt(sparse_cho_factor.D()) * (
+        sparse_cho_factor.L().T @ sparse_cho_factor.apply_P(x)
+    )
+
+
+def _sparse_cho_factor_whiten(
+    sparse_cho_factor: SparseChoFactor, x: NDArrayFloat
+) -> NDArrayFloat:
+    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
+    # We want to solve A z = x  ==> z = A^{-1} x
+    # We use the cholesky factorization LDL' = PA'AP'
+    # with P' = P^{-1} the permutation that makes the decomposition unique.
+    # So LD^{1/2} = PA' and A = D^{1/2}L'P
+    # Finally z = P'L^{-T}D^{-1/2} x
+    # Possible to do it with gmres -> not efficient without preconditioner
+    # from scipy.sparse.linalg import gmres
+    # L, D = cholQ.L_D()
+    # z, _ = cholQ.apply_Pt(
+    #    gmres(L.T.tocsc(), 1.0 / np.sqrt(D.diagonal()) * x, tol=1e-12)
+    # )
+    # CHOLMOD is the most performant
+    return sparse_cho_factor.apply_Pt(
+        sparse_cho_factor.solve_Lt(1.0 / np.sqrt(sparse_cho_factor.D()) * x)
+    )
+
+
+class CovViaSparseCholesky(CovarianceMatrix):
+    r"""
+    Representation of a covariance via a sparse Cholesky factorization.
+
+    Notes
+    -----
+    Let the covariance matrix be :math:`A` and :math:`L` be the lower
+    Cholesky factor such that :math:`L L^T = A`.
+    Whitening of a data point :math:`x` is performed by computing
+    :math:`L^{-1} x`. :math:`\log\det{A}` is calculated as
+    :math:`2tr(\log{L})`, where the :math:`\log` operation is performed
+    element-wise.
+
+    This `Covariance` class does not support singular covariance matrices
+    because the Cholesky decomposition does not exist for a singular
+    covariance matrix.
+
+    TODO: indicate that LGPL licence is expected here because it relies on CHOLMOD.
+
+    Examples
+    --------
+    Prepare a symmetric positive definite covariance matrix ``A`` and a
+    data point ``x``.
+
+    >>> import numpy as np
+    >>> import covmats
+    >>> rng = np.random.default_rng()
+    >>> n = 5
+    >>> A = rng.random(size=(n, n))
+    >>> A = A @ A.T  # make the covariance symmetric positive definite
+    >>> x = rng.random(size=n)
+
+    Perform the Cholesky decomposition of ``A`` and create the
+    `Covariance` object.
+
+    >>> L = np.linalg.cholesky(A)
+    >>> cov = covmats.CovViaCholesky(L)
+
+    Compare the functionality of the `Covariance` object against
+    reference implementation.
+
+    >>> from scipy.linalg import solve_triangular
+    >>> res = cov.whiten(x)
+    >>> ref = solve_triangular(L, x, lower=True)
+    >>> np.allclose(res, ref)
+    True
+    >>> res = cov.log_pdet
+    >>> ref = np.linalg.slogdet(A)[-1]
+    >>> np.allclose(res, ref)
+    True
+
+    """
+
+    __slots__ = ["_sparse_cho_factor"]
+
+    def __init__(
+        self,
+        sparse_cho_factor: SparseChoFactor,
+        sparse_covariance: Optional[sp.sparse.sparray] = None,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        sparse_cho_factor : SparseChoFactor
+            Lower triangle of the sparse covariance matrix Cholesky factorization.
+        sparse_covariance : Optional[sp.sparse.sparray], optional
+            Sparse covariance matrix, by default None
+        """
+        self._sparse_cho_factor: SparseChoFactor = sparse_cho_factor
+        if sparse_covariance is not None:
+            pass
+
+        n = self._sparse_cho_factor.shape[0]
+        super().__init__(
+            shape=(n, n),
+            log_pdet=self._sparse_cho_factor.slogdet(),
+            rank=n,  # must be full rank if invertible
+        )
+        self._allow_singular = False
+
+    def _todense(self):
+        return self._factor @ self._factor.T
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        return self._sparse_cho_factor(x)
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        return _sparse_cho_factor_whiten(self._sparse_cho_factor, x)
+
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        return _sparse_cho_factor_colorize(self._sparse_cho_factor, x)
+
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        """Solve Ax = b, with A, the current covariance matrix instance."""
+        # TODO
+        raise NotImplementedError(
+            "`solve` is not implemented for a sparse cholesky matrix yet!\n"
+            "Please be patient!"
+        )
+
+
+class CovViaPrecisionCholesky(CovarianceMatrix):
+    r"""
+    Representation of a covariance via the Cholesky factorization of its inverse
+    (aka the precision matrix).
+
+    Notes
+    -----
+    Let the covariance matrix be :math:`A`, its precision matrix be
+    :math:`P = A^{-1}`, and :math:`L` be the lower Cholesky factor such
+    that :math:`L L^T = P`.
+    Whitening of a data point :math:`x` is performed by computing
+    :math:`x^T L`. :math:`\log\det{A}` is calculated as
+    :math:`-2tr(\log{L})`, where the :math:`\log` operation is performed
+    element-wise.
+
+    This `Covariance` class does not support singular covariance matrices
+    because the precision matrix does not exist for a singular covariance
+    matrix.
+
+    Examples
+    --------
+    Prepare a symmetric positive definite precision matrix ``P`` and a
+    data point ``x``. (If the precision matrix is not already available,
+    consider the other factory methods of the `Covariance` class.)
+
+    >>> import numpy as np
+    >>> import covmats
+    >>> rng = np.random.default_rng()
+    >>> n = 5
+    >>> P = rng.random(size=(n, n))
+    >>> P = P @ P.T  # a precision matrix must be positive definite
+    >>> x = rng.random(size=n)
+
+    Create the `Covariance` object.
+
+    >>> cov = covmats.CovViaPrecisionCholesky(np.linalg.cholesky(P))
+
+    Compare the functionality of the `Covariance` object against
+    reference implementations.
+
+    >>> res = cov.whiten(x)
+    >>> ref = x @ np.linalg.cholesky(P)
+    >>> np.allclose(res, ref)
+    True
+    >>> res = cov.log_pdet
+    >>> ref = -np.linalg.slogdet(P)[-1]
+    >>> np.allclose(res, ref)
+    True
+
+    """
+
+    __slots__: List[str] = [
+        "_cho_factor",
+    ]
+
+    def __init__(
+        self, cho_factor: ArrayLike, precision: Optional[ArrayLike] = None
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        cho_factor : NDArrayFloat
+            Lower triangle of the precision matrix Cholesky factorization.
+        covariance : Optional[NDArrayFloat], optional
+            Dense precision matrix, by default None
+
+        Raises
+        ------
+        ValueError
+            _description_
+        """
+        self._cho_factor = self._validate_dense_matrix(
+            cho_factor, "cho_factor"
+        )  # lower triangle
+        if precision is not None:
+            self._precision = self._validate_dense_matrix(precision, "precision")
+        n = np.shape(self._cho_factor)[0]
+        super().__init__(
+            shape=(n, n),
+            log_pdet=-2 * np.log(np.diag(self._cho_factor)).sum(axis=-1),
+            rank=n,  # must be full rank if invertible
+        )
+
+        # Must be initialized after super()
+        self._allow_singular = False
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        return sp.linalg.cho_solve((self._cho_factor, True), x)
+
+    def _todense(self) -> NDArrayFloat:
+        n = self._shape[-1]
+        return (
+            sp.linalg.cho_solve((self._cho_factor, True), np.eye(n))
+            if self._dense_mat is None
+            else self._dense_mat
+        )
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        return x @ self._cho_factor
+
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        m = x.T.shape[0]
+        res = sp.linalg.solve_triangular(
+            self._cho_factor.T, x.T.reshape(m, -1), lower=False
+        )
+        # L1^T @ b.T = x.T
+        return res.reshape(x.T.shape).T
+
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        """Solve Ax = b, with A, the current covariance matrix instance."""
+        return self._precision @ b
+
+
+class CovViaSparsePrecisionCholesky(CovarianceMatrix):
+    """
+    Representation of a covariance via the sparse Cholesky factorization of its
+    sparse inverse (aka the precision matrix).
+
+    Warning
+    -------
+    This piece of code rely on
+    `scikit-sparse <https://github.com/scikit-sparse/scikit-sparse>`_
+    which itself depends on external libraries with GPL licenses, such as
+    `SuiteSparse <https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file>`_.
+    As a consequence these pieces of code must adopt that license as well.
+    Please look into the terms of this license before creating a dynamic
+    link to this pieces in your downstream package and understand
+    commercial use limitations. We are not lawyers and cannot provide any
+    guidance on the terms of this license.
+
+    Please see https://www.gnu.org/licenses/licenses.html#LGPL
+
+
+    Notes
+    -----
+    Blablabla.
+    """
+
+    __slots__: List[str] = [
+        "_sparse_precision",
+        "_sparse_cho_factor",
+    ]
+
+    def __init__(
+        self,
+        sparse_cho_factor: SparseChoFactor,
+        sparse_precision: Optional[sp.sparse.sparray] = None,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        sparse_cho_factor : SparseChoFactor
+            Lower triangle of the sparse precision matrix Cholesky factorization.
+        sparse_precision : Optional[sp.sparse.sparray], optional
+            Sparse precision matrix (inverse of the covariance matrix), by default None
+        """
+        self._sparse_cho_factor = sparse_cho_factor
+
+        if sparse_precision is not None:
+            self._sparse_precision = self._validate_sparse_matrix(
+                sparse_precision, "sparse_precision"
+            )
+
+        n = self._sparse_cho_factor.shape[0]
+        super().__init__(
+            shape=(n, n),
+            log_pdet=-self._sparse_cho_factor.slogdet(),
+            rank=n,  # must be full rank if invertible
+        )
+        self._allow_singular = False
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        return self._sparse_cho_factor.solve_A(x)
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        return _sparse_cho_factor_colorize(self._sparse_cho_factor, x)
+
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        return _sparse_cho_factor_whiten(self._sparse_cho_factor, x)
+
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        """Return x = A^{-1} b."""
+        if self._sparse_precision is not None:
+            return self._sparse_precision.dot(b)
+        # We want to solve x = A' A b
+        # We use the cholesky factorization LDL' = PA'AP'
+        # with P' = P^{-1} the permutation that makes the decomposition unique.
+        # So LD^{1/2} = PA' and A = D^{1/2}L'P
+        # A'A = P'L DL'P
+        L = self._sparse_cho_factor.L()
+        D = self._sparse_cho_factor.D()
+        return self._sparse_cho_factor.apply_Pt(
+            L @ D @ L.T @ self._sparse_cho_factor.apply_P(b)
+        )
+
+    def get_diagonal(self) -> NDArrayFloat:
+        """
+        Return the diagonal entries of the matrix (variances).
+        The matrix is never built explicitly. Instead the matvec interface is
+        used to multiply all column of the identity matrix.
+        """
+        return get_sparse_covmat_variance(
+            self._sparse_precision, self._sparse_cho_factor
+        )
+
+    def _todense(self):
+        return self._sparse_cho_factor.inv()
+
+
+class CovViaEigenFactorization(CovarianceMatrix):
+    r"""
+    Representation of a covariance provided via eigenfactorization
+
+    Parameters
+    ----------
+    eigenfactorization : sequence
+        A sequence (nominally a tuple) containing the eigenvalue and
+        eigenvector arrays as computed by `scipy.sparse.eigsh`.
+
+    Notes
+    -----
+    Let the covariance matrix be :math:`A`, let :math:`V` be matrix of
+    eigenvectors, and let :math:`W` be the diagonal matrix of eigenvalues
+    such that `V W V^T = A`.
+
+    When all of the eigenvalues are strictly positive, whitening of a
+    data point :math:`x` is performed by computing
+    :math:`x^T (V W^{-1/2})`, where the inverse square root can be taken
+    element-wise.
+    :math:`\log\det{A}` is calculated as  :math:`tr(\log{W})`,
+    where the :math:`\log` operation is performed element-wise.
+
+    This `Covariance` class supports singular covariance matrices. When
+    computing ``_log_pdet``, non-positive eigenvalues are ignored.
+    Whitening is not well defined when the point to be whitened
+    does not lie in the span of the columns of the covariance matrix. The
+    convention taken here is to treat the inverse square root of
+    non-positive eigenvalues as zeros.
+
+    Examples
+    --------
+    Prepare a symmetric positive definite covariance matrix ``A`` and a
+    data point ``x``.
+
+    >>> import numpy as np
+    >>> import covmats
+    >>> rng = np.random.default_rng()
+    >>> n = 5
+    >>> A = rng.random(size=(n, n))
+    >>> A = A @ A.T  # make the covariance symmetric positive definite
+    >>> x = rng.random(size=n)
+
+    Perform the eigenfactorization of ``A`` and create the `Covariance`
+    object.
+
+    >>> w, v = np.linalg.eigh(A)
+    >>> cov = covmats.CovViaEigenFactorization((w, v))
+
+    Compare the functionality of the `Covariance` object against
+    reference implementations.
+
+    >>> res = cov.whiten(x)
+    >>> ref = x @ (v @ np.diag(w**-0.5))
+    >>> np.allclose(res, ref)
+    True
+    >>> res = cov.log_pdet
+    >>> ref = np.linalg.slogdet(A)[-1]
+    >>> np.allclose(res, ref)
+    True
+
+    """
+
+    __slots__: List[str] = [
+        "_LP",
+        "_LA",
+        "_w",
+        "_v",
+        "_null_basis",
+        "_eps",
+    ]
+
+    def __init__(self, eigenfactorization: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        (eig_vals, eig_vects) : Tuple[NDArrayFloat, NDArrayFloat]
+            - 1D vector of eigen values with size `n_pc`.
+            - 2D arrays of eigen vectors (columns) with size `(Ns, n_pc)`. Ns being the
+            number of elements in the original covariance matrix.
+        """
+        eigenvalues, eigenvectors = eigenfactorization
+
+        # i_zero = eigenvalues <= 0
+        # positive_eigenvalues = np.array(eigenvalues, dtype=np.float64)
+        # positive_eigenvalues[i_zero] = 1  # ones don't affect determinant
+
+        # psuedo_reciprocals = 1 / np.sqrt(positive_eigenvalues)
+        # psuedo_reciprocals[i_zero] = 0
+
+        # self._LP = eigenvectors * psuedo_reciprocals
+        # self._LA = eigenvectors * np.sqrt(eigenvalues.ravel())
+        # self._null_basis = eigenvectors * i_zero
+        # # This is only used for `_support_mask`, not to decide whether
+        # # the covariance is singular or not.
+        # self._eps = sp.stats._multivariate._eigvalsh_to_eps(eigenvalues) * 10**3
+        self._allow_singular = True
+        self._w = eigenvalues.reshape(-1, 1)
+        self._v = eigenvectors
+
+        super().__init__(
+            shape=(eigenvectors.shape[0], eigenvectors.shape[0]),
+            log_pdet=np.sum(np.log(eigenvalues), axis=0).item(),
+            rank=self.n_pc,
+        )
+
+    @property
+    def n_pc(self) -> int:
+        """
+        Return the number of eigen vectors/values, i.e. principal components.
+
+        It is determined from the eigen values vector size.
+        """
+        return self._w.size
+
+    @property
+    def subspace_size(self) -> int:
+        return self.n_pc
+
+    @property
+    def eig_vals(self) -> NDArrayFloat:
+        """Return the Eigen values."""
+        return self._w
+
+    @property
+    def eig_vects(self) -> NDArrayFloat:
+        """Return the Eigen vectors."""
+        return self._v
+
+    def get_diagonal(self) -> NDArrayFloat:
+        """
+        Return the diagonal entries of the matrix (variances).
+        """
+        return np.sum(((self._v.T * np.sqrt(self._w)) ** 2), axis=0)
+
+    def _todense(self) -> NDArrayFloat:
+        return np.dot(self._v, np.multiply(self._w, self._v.T))
+
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        # shape (r, n)
+        return (
+            (self._v.T * (1.0 / np.sqrt(self._w))).T @ self._v.T
+        ) @ x  # x @ self._LP
+
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        return x @ (self._v.T * np.sqrt(self._w))
+
+    def _support_mask(self, x):
+        """
+        Check whether x lies in the support of the distribution.
+        """
+        # TODO: this is not correct either
+        raise NotImplementedError(
+            "_support_mask is not implemented for EigenFactorization"
+        )
+        residual = np.linalg.norm(x @ self._null_basis, axis=-1)
+        in_support = residual < self._eps
+        return in_support
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        return np.dot(
+            self._v,
+            np.multiply(self._w, np.dot(self._v.T, x.reshape(-1, 1))),
+        )
+
+    def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        assert np.shape(X)[0] == self.shape[0]
+        return np.dot(
+            self._v,
+            np.multiply(self._w, np.dot(self._v.T, X)),
+        )
+
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Return $Q^{-1} b = ZD^{-1}Z^{T}b$.
+
+        Parameters
+        ----------
+        b: NDArrayFloat
+            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
+            shape ($N_{\mathrm{s}}$, $N_e$).
+
+        Returns
+        -------
+        NDAarrayFloat
+            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
+            shape ($N_{\mathrm{s}}$, $N_e$).
+        """
+        # np.dot(invZs.T, invZs)
+        # Note: x must be a column vector of a matrix with size (Ns, Ne)
+        ne = 1  # case of a column vector
+        if b.ndim > 1:
+            ne = b.shape[1]
+        return np.dot(
+            self._v,
+            np.multiply(1.0 / self._w, np.dot(self._v.T, b.reshape(-1, ne))),
+        )
+
+    def get_sparse_LLT_factor(self) -> csc_array:
+        """
+        Return the sparse factor L of the LL^T factorization of the eigen matrix.
+
+        Return
+        ------
+        L: csc_array
+            L = U * V^{T/2}.
+        """
+        # 1) Convert U sqrt(V) to a sparse format
+        sp_mat = sp.sparse.lil_array(self._v * np.sqrt(self._w).T)
+        # 2) Resize -> we now have a square matrix and indices are preserved
+        sp_mat.resize(self.shape)
+        # 3) Convert to column format
+        return sp_mat.tocsc()
 
 
 class CovViaEnsemble(CovarianceMatrix):
@@ -782,6 +1390,15 @@ class CovViaEnsemble(CovarianceMatrix):
     :math:`\mathbf{x} = \mathbf{\Sigma_{ss}}^{-1}\mathbf{b}`
     is obtained solving the system :math:`\mathbf{A}^{T}\mathbf{Ax} = \mathbf{b}`,
     using gmres, where only anomalies matrix vector products are required.
+
+    References
+    ----------
+    .. bibliography::
+        :filter: False
+
+        evensenDataAssimilationEnsemble2007
+        aanonsenEnsembleKalmanFilter2009
+
     """
 
     def __init__(
@@ -879,7 +1496,7 @@ class CovViaEnsemble(CovarianceMatrix):
 
 def _generate_dense_matrix_from_kernel(
     pts: NDArrayFloat, kernel: Callable, len_scale: NDArrayFloat, nugget: float = 0.0
-) -> CovViaDense:
+) -> NDArrayFloat:
     """
     Generate a dense matrix.
 
@@ -903,9 +1520,7 @@ def _generate_dense_matrix_from_kernel(
     scaled_pts = np.array(pts, copy=True)
     for dim in range(scaled_pts.shape[1]):
         scaled_pts[:, dim] /= len_scale[dim]
-    return CovViaDense(
-        kernel(sp.spatial.distance_matrix(scaled_pts, scaled_pts)), nugget=nugget
-    )
+    return kernel(sp.spatial.distance_matrix(scaled_pts, scaled_pts))
 
 
 class CovViaKernel(CovarianceMatrix, abc.ABC):
@@ -1100,13 +1715,17 @@ class CovViaFFT(CovViaKernel):
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         # TODO maybe at the kernel level ?
         raise NotImplementedError(
-            "`whiten` is not implemented for a FFT matrix yet!\nPlease be patient!"
+            "`whiten` is not implemented for a CovViaFFT!\n"
+            "Please be convert you covariance matrix to a compatible type such as"
+            "CovViaEigenFactorization!"
         )
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         # TODO maybe at the kernel level ?
         raise NotImplementedError(
-            "`colorize` is not implemented for a FFT matrix yet!\nPlease be patient!"
+            "`colorize` is not implemented for a CovViaFFT!\n"
+            "Please be convert you covariance matrix to a compatible type such as"
+            "CovViaEigenFactorization!"
         )
 
     def solve(
@@ -1130,570 +1749,6 @@ class CovViaFFT(CovViaKernel):
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
         return self._kernel(np.zeros(len(self._pts)))
-
-
-class CovViaPrecision(CovarianceMatrix):
-    r"""
-    Return a representation of a covariance from its precision matrix.
-
-    Parameters
-    ----------
-    precision : array_like
-        The precision matrix; that is, the inverse of a square, symmetric,
-        positive definite covariance matrix.
-    covariance : array_like, optional
-        The square, symmetric, positive definite covariance matrix. If not
-        provided, this may need to be calculated (e.g. to evaluate the
-        cumulative distribution function of
-        `scipy.stats.multivariate_normal`) by inverting `precision`.
-
-    Notes
-    -----
-    Let the covariance matrix be :math:`A`, its precision matrix be
-    :math:`P = A^{-1}`, and :math:`L` be the lower Cholesky factor such
-    that :math:`L L^T = P`.
-    Whitening of a data point :math:`x` is performed by computing
-    :math:`x^T L`. :math:`\log\det{A}` is calculated as
-    :math:`-2tr(\log{L})`, where the :math:`\log` operation is performed
-    element-wise.
-
-    This `Covariance` class does not support singular covariance matrices
-    because the precision matrix does not exist for a singular covariance
-    matrix.
-
-    Examples
-    --------
-    Prepare a symmetric positive definite precision matrix ``P`` and a
-    data point ``x``. (If the precision matrix is not already available,
-    consider the other factory methods of the `Covariance` class.)
-
-    >>> import numpy as np
-    >>> from scipy import stats
-    >>> rng = np.random.default_rng()
-    >>> n = 5
-    >>> P = rng.random(size=(n, n))
-    >>> P = P @ P.T  # a precision matrix must be positive definite
-    >>> x = rng.random(size=n)
-
-    Create the `Covariance` object.
-
-    >>> cov = stats.Covariance.from_precision(P)
-
-    Compare the functionality of the `Covariance` object against
-    reference implementations.
-
-    >>> res = cov.whiten(x)
-    >>> ref = x @ np.linalg.cholesky(P)
-    >>> np.allclose(res, ref)
-    True
-    >>> res = cov.log_pdet
-    >>> ref = -np.linalg.slogdet(P)[-1]
-    >>> np.allclose(res, ref)
-    True
-
-    """
-
-    __slots__: List[str] = [
-        "_chol_P",
-        "_LA",
-        "_w",
-        "_v",
-        "_null_basis",
-        "_eps",
-    ]
-
-    def __init__(
-        self, precision: NDArrayFloat, covariance: Optional[NDArrayFloat] = None
-    ) -> None:
-
-        precision = self._validate_dense_matrix(precision, "precision")
-        if covariance is not None:
-            covariance = self._validate_dense_matrix(covariance, "covariance")
-            message = "`precision.shape` must equal `covariance.shape`."
-            if precision.shape != covariance.shape:
-                raise ValueError(message)
-
-        self._chol_P = np.linalg.cholesky(precision)  # lower triangle
-        self._precision = precision
-
-        super().__init__(
-            shape=precision.shape,
-            log_pdet=-2 * np.log(np.diag(self._chol_P)).sum(axis=-1),
-            rank=precision.shape[-1],  # must be full rank if invertible
-        )
-
-        # Must be initialized after super()
-        self._dense_mat = covariance
-        self._allow_singular = False
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return sp.linalg.cho_solve((self._chol_P, True), x)
-
-    def _todense(self) -> NDArrayFloat:
-        n = self._shape[-1]
-        return (
-            sp.linalg.cho_solve((self._chol_P, True), np.eye(n))
-            if self._dense_mat is None
-            else self._dense_mat
-        )
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._chol_P
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        m = x.T.shape[0]
-        res = sp.linalg.solve_triangular(
-            self._chol_P.T, x.T.reshape(m, -1), lower=False
-        )
-        # L1^T @ b.T = x.T
-        return res.reshape(x.T.shape).T
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        return self._precision @ b
-
-
-# TODO
-class CovViaSparsePrecision(CovarianceMatrix):
-    """
-    Represents a covariance matrix through its sparse inverse (precision matrix).
-
-    Works for arbitrary kernels on irregular grids.
-    """
-
-    __slots__ = ["inv_mat", "inv_mat_cho_factor", "preconditioner"]
-
-    __slots__: List[str] = [
-        "_chol_P",
-        "_LA",
-        "_w",
-        "_v",
-        "_null_basis",
-        "_eps",
-        "_sparse_precision",
-        "_sparse_cho_factor",
-    ]
-
-    def __init__(
-        self,
-        sparse_precision: sp.sparse.sparray,
-        sparse_cho_factor: Optional[SparseChoFactor] = None,
-    ) -> None:
-        """
-        Initialize the instance.
-
-        Parameters
-        ----------
-        sparse_precision : csc_array
-            Sparse precision matrix (inverse of the covariance matrix).
-        sparse_cho_factor: Optional[SparseChoFactor]
-            inv_mat CHOLMOD SparseChoFactor. If not provided, the factorization is
-            performed at the instance initialization. The default is None.
-        """
-        sparse_precision = self._validate_sparse_matrix(
-            sparse_precision, "sparse_precision"
-        )
-
-        self._sparse_precision = sparse_precision
-        # self._cov_matrix = covariance
-
-        self._allow_singular = False
-
-        if sparse_cho_factor is None:
-            self._sparse_cho_factor: SparseChoFactor = sparse_cholesky(sparse_precision)
-        else:
-            self._sparse_cho_factor: SparseChoFactor = sparse_cho_factor
-
-        super().__init__(
-            shape=sparse_precision.shape,
-            log_pdet=0.0,  # self._sparse_cho_factor.log_pdet, TODO
-            rank=sparse_precision.shape[-1],  # must be full rank if invertible
-        )
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO
-        raise NotImplementedError(
-            "`colorize` is not implemented for a sparse precision matrix yet!\n"
-            "Please be patient!"
-        )
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO
-        raise NotImplementedError(
-            "`colorize` is not implemented for a sparse precision matrix yet!\n"
-            "Please be patient!"
-        )
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Return $A^{-1} b."""
-        return self._sparse_precision.dot(b)
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """
-        Return the diagonal entries of the matrix (variances).
-        The matrix is never built explicitly. Instead the matvec interface is
-        used to multiply all column of the identity matrix.
-        """
-        return get_sparse_covmat_variance(
-            self._sparse_precision, self._sparse_cho_factor
-        )
-
-
-class CovViaCholesky(CovarianceMatrix):
-    r"""
-    Representation of a covariance provided via the (lower) sparse Cholesky factor
-
-    Parameters
-    ----------
-    cholesky : array_like
-        The lower triangular Cholesky factor of the covariance matrix.
-
-    Notes
-    -----
-    Let the covariance matrix be :math:`A` and :math:`L` be the lower
-    Cholesky factor such that :math:`L L^T = A`.
-    Whitening of a data point :math:`x` is performed by computing
-    :math:`L^{-1} x`. :math:`\log\det{A}` is calculated as
-    :math:`2tr(\log{L})`, where the :math:`\log` operation is performed
-    element-wise.
-
-    This `Covariance` class does not support singular covariance matrices
-    because the Cholesky decomposition does not exist for a singular
-    covariance matrix.
-
-    Examples
-    --------
-    Prepare a symmetric positive definite covariance matrix ``A`` and a
-    data point ``x``.
-
-    >>> import numpy as np
-    >>> from scipy import stats
-    >>> rng = np.random.default_rng()
-    >>> n = 5
-    >>> A = rng.random(size=(n, n))
-    >>> A = A @ A.T  # make the covariance symmetric positive definite
-    >>> x = rng.random(size=n)
-
-    Perform the Cholesky decomposition of ``A`` and create the
-    `Covariance` object.
-
-    >>> L = np.linalg.cholesky(A)
-    >>> cov = stats.Covariance.from_cholesky(L)
-
-    Compare the functionality of the `Covariance` object against
-    reference implementation.
-
-    >>> from scipy.linalg import solve_triangular
-    >>> res = cov.whiten(x)
-    >>> ref = solve_triangular(L, x, lower=True)
-    >>> np.allclose(res, ref)
-    True
-    >>> res = cov.log_pdet
-    >>> ref = np.linalg.slogdet(A)[-1]
-    >>> np.allclose(res, ref)
-    True
-
-    """
-
-    __slots__ = ["_factor"]
-
-    def __init__(self, cholesky: NDArrayFloat) -> None:
-        L = self._validate_matrix(cholesky, "cholesky")
-
-        self._factor: NDArrayFloat = L
-        self._allow_singular = False
-
-        super().__init__(
-            shape=L.shape,
-            log_pdet=2 * np.log(np.diag(self._factor)).sum(axis=-1),
-            rank=L.shape[-1],  # must be full rank for cholesky
-        )
-
-    def _todense(self) -> NDArrayFloat:
-        return self._factor @ self._factor.T
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return np.linalg.multi_dot([self._factor, self._factor.T, x])
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        m = x.T.shape[0]
-        res = sp.linalg.solve_triangular(self._factor, x.T.reshape(m, -1), lower=True)
-        return res.reshape(x.T.shape).T
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ self._factor.T
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        return sp.linalg.cho_solve((self._factor, True), b)
-
-
-class CovViaSparseCholesky(CovarianceMatrix):
-    def __init__(self, sparse_cholesky: sp.sparse.sparray) -> None:
-        L = self._validate_sparse_matrix(sparse_cholesky, "cholesky")
-
-        self._factor = L
-        self._log_pdet = 2 * np.log(np.diag(self._factor)).sum(axis=-1)
-        self._rank = L.shape[-1]  # must be full rank for cholesky
-        self._shape = L.shape
-        self._allow_singular = False
-
-    def _todense(self):
-        return self._factor @ self._factor.T
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO
-        raise NotImplementedError(
-            "`whiten` is not implemented for a sparse cholesky matrix yet!\n"
-            "Please be patient!"
-        )
-        # m = x.T.shape[0]
-        # res = sp.linalg.solve_triangular(self._factor, x.T.reshape(m, -1), lower=True)
-        # return res.reshape(x.T.shape).T
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO
-        raise NotImplementedError(
-            "`colorize` is not implemented for a sparse cholesky matrix yet!\n"
-            "Please be patient!"
-        )
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
-        # TODO
-        raise NotImplementedError(
-            "`solve` is not implemented for a sparse cholesky matrix yet!\n"
-            "Please be patient!"
-        )
-
-
-class CovViaEigenFactorization(CovarianceMatrix):
-    r"""
-    Representation of a covariance provided via eigenfactorization
-
-    Parameters
-    ----------
-    eigenfactorization : sequence
-        A sequence (nominally a tuple) containing the eigenvalue and
-        eigenvector arrays as computed by `scipy.sparse.eigsh`.
-
-    Notes
-    -----
-    Let the covariance matrix be :math:`A`, let :math:`V` be matrix of
-    eigenvectors, and let :math:`W` be the diagonal matrix of eigenvalues
-    such that `V W V^T = A`.
-
-    When all of the eigenvalues are strictly positive, whitening of a
-    data point :math:`x` is performed by computing
-    :math:`x^T (V W^{-1/2})`, where the inverse square root can be taken
-    element-wise.
-    :math:`\log\det{A}` is calculated as  :math:`tr(\log{W})`,
-    where the :math:`\log` operation is performed element-wise.
-
-    This `Covariance` class supports singular covariance matrices. When
-    computing ``_log_pdet``, non-positive eigenvalues are ignored.
-    Whitening is not well defined when the point to be whitened
-    does not lie in the span of the columns of the covariance matrix. The
-    convention taken here is to treat the inverse square root of
-    non-positive eigenvalues as zeros.
-
-    Examples
-    --------
-    Prepare a symmetric positive definite covariance matrix ``A`` and a
-    data point ``x``.
-
-    >>> import numpy as np
-    >>> from scipy import stats
-    >>> rng = np.random.default_rng()
-    >>> n = 5
-    >>> A = rng.random(size=(n, n))
-    >>> A = A @ A.T  # make the covariance symmetric positive definite
-    >>> x = rng.random(size=n)
-
-    Perform the eigenfactorization of ``A`` and create the `Covariance`
-    object.
-
-    >>> w, v = np.linalg.eigh(A)
-    >>> cov = stats.Covariance.from_eigenfactorization((w, v))
-
-    Compare the functionality of the `Covariance` object against
-    reference implementations.
-
-    >>> res = cov.whiten(x)
-    >>> ref = x @ (v @ np.diag(w**-0.5))
-    >>> np.allclose(res, ref)
-    True
-    >>> res = cov.log_pdet
-    >>> ref = np.linalg.slogdet(A)[-1]
-    >>> np.allclose(res, ref)
-    True
-
-    """
-
-    __slots__: List[str] = [
-        "_LP",
-        "_LA",
-        "_w",
-        "_v",
-        "_null_basis",
-        "_eps",
-    ]
-
-    def __init__(self, eigenfactorization: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
-        """
-        Initialize the instance.
-
-        Parameters
-        ----------
-        (eig_vals, eig_vects) : Tuple[NDArrayFloat, NDArrayFloat]
-            - 1D vector of eigen values with size `n_pc`.
-            - 2D arrays of eigen vectors (columns) with size `(Ns, n_pc)`. Ns being the
-            number of elements in the original covariance matrix.
-        """
-        eigenvalues, eigenvectors = eigenfactorization
-
-        # i_zero = eigenvalues <= 0
-        # positive_eigenvalues = np.array(eigenvalues, dtype=np.float64)
-        # positive_eigenvalues[i_zero] = 1  # ones don't affect determinant
-
-        # psuedo_reciprocals = 1 / np.sqrt(positive_eigenvalues)
-        # psuedo_reciprocals[i_zero] = 0
-
-        # self._LP = eigenvectors * psuedo_reciprocals
-        # self._LA = eigenvectors * np.sqrt(eigenvalues.ravel())
-        # self._null_basis = eigenvectors * i_zero
-        # # This is only used for `_support_mask`, not to decide whether
-        # # the covariance is singular or not.
-        # self._eps = sp.stats._multivariate._eigvalsh_to_eps(eigenvalues) * 10**3
-        self._allow_singular = True
-        self._w = eigenvalues.reshape(-1, 1)
-        self._v = eigenvectors
-
-        super().__init__(
-            shape=(eigenvectors.shape[0], eigenvectors.shape[0]),
-            log_pdet=np.sum(np.log(eigenvalues), axis=0).item(),
-            rank=self.n_pc,
-        )
-
-    @property
-    def n_pc(self) -> int:
-        """
-        Return the number of eigen vectors/values, i.e. principal components.
-
-        It is determined from the eigen values vector size.
-        """
-        return self._w.size
-
-    @property
-    def subspace_size(self) -> int:
-        return self.n_pc
-
-    @property
-    def eig_vals(self) -> NDArrayFloat:
-        """Return the Eigen values."""
-        return self._w
-
-    @property
-    def eig_vects(self) -> NDArrayFloat:
-        """Return the Eigen vectors."""
-        return self._v
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """
-        Return the diagonal entries of the matrix (variances).
-        """
-        return np.sum(((self._v.T * np.sqrt(self._w)) ** 2), axis=0)
-
-    def _todense(self) -> NDArrayFloat:
-        return np.dot(self._v, np.multiply(self._w, self._v.T))
-
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # shape (r, n)
-        return (
-            (self._v.T * (1.0 / np.sqrt(self._w))).T @ self._v.T
-        ) @ x  # x @ self._LP
-
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ (self._v.T * np.sqrt(self._w))
-
-    def _support_mask(self, x):
-        """
-        Check whether x lies in the support of the distribution.
-        """
-        # TODO: this is not correct either
-        raise NotImplementedError(
-            "_support_mask is not implemented for EigenFactorization"
-        )
-        residual = np.linalg.norm(x @ self._null_basis, axis=-1)
-        in_support = residual < self._eps
-        return in_support
-
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return np.dot(
-            self._v,
-            np.multiply(self._w, np.dot(self._v.T, x.reshape(-1, 1))),
-        )
-
-    def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        assert np.shape(X)[0] == self.shape[0]
-        return np.dot(
-            self._v,
-            np.multiply(self._w, np.dot(self._v.T, X)),
-        )
-
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
-        r"""
-        Return $Q^{-1} b = ZD^{-1}Z^{T}b$.
-
-        Parameters
-        ----------
-        b: NDArrayFloat
-            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
-            shape ($N_{\mathrm{s}}$, $N_e$).
-
-        Returns
-        -------
-        NDAarrayFloat
-            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
-            shape ($N_{\mathrm{s}}$, $N_e$).
-        """
-        # np.dot(invZs.T, invZs)
-        # Note: x must be a column vector of a matrix with size (Ns, Ne)
-        ne = 1  # case of a column vector
-        if b.ndim > 1:
-            ne = b.shape[1]
-        return np.dot(
-            self._v,
-            np.multiply(1.0 / self._w, np.dot(self._v.T, b.reshape(-1, ne))),
-        )
-
-    def get_sparse_LLT_factor(self) -> csc_array:
-        """
-        Return the sparse factor L of the LL^T factorization of the eigen matrix.
-
-        Return
-        ------
-        L: csc_array
-            L = U * V^{T/2}.
-        """
-        # 1) Convert U sqrt(V) to a sparse format
-        sp_mat = sp.sparse.lil_array(self._v * np.sqrt(self._w).T)
-        # 2) Resize -> we now have a square matrix and indices are preserved
-        sp_mat.resize(self.shape)
-        # 3) Convert to column format
-        return sp_mat.tocsc()
 
 
 def get_linop_eigen_factorization(
@@ -1732,7 +1787,7 @@ def get_linop_eigen_factorization(
     Tuple[NDArrayFloat, NDArrayFloat]
         Eigen values and eigen vectors.
     """
-    logging.info("eigenfactorization of Prior Covariance")
+    logging.info("Eigen factorization of linear operator")
 
     # twopass = False if not 'twopass' in self.params else self.params['twopass']
     start = time()
