@@ -45,6 +45,9 @@ Changelog = "https://github.com/antoinecollet5/covmats/blob/master/CHANGELOG.rst
 py-modules = []
 packages = ["covmats"]
 
+[tool.setuptools.package-data]
+mypackage = ["data/*.mtx"]
+
 [tool.setuptools.dynamic]
 version = { attr = "covmats.__about__.__version__" }
 
