@@ -155,7 +155,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         self.solvmatvecs: int = 0
         self._log_pdet: float = log_pdet
         self._rank: int = rank
-        self._dense_mat: NDArrayFloat = np.array([])
+        self._dense_mat: Optional[NDArrayFloat] = None
         self.dtype = np.dtype("d")  # float64 for LinearOperator
         self._shape = shape
         self._subspace_size = shape[0]
@@ -356,7 +356,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         >>> A = rng.random(size=(n, n))
         >>> cov_array = A @ A.T  # make matrix symmetric positive definite
         >>> precision = np.linalg.inv(cov_array)
-        >>> cov_object = covmats.CovViaPrecisionCholesky(sp.linalg.cholesky(precision))
+        >>> cov_object = covmats.CovViaPrecisionCholesky(
+        .. sp.linalg.cholesky(precision, lower=True))
         >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
         >>> x_ = cov_object.whiten(x)
         >>> np.cov(x_, rowvar=False)  # near-identity covariance
@@ -896,7 +897,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         if sparse_covariance is not None:
             pass
 
-        n = self._sparse_cho_factor.shape[0]
+        n = self._sparse_cho_factor.D().shape[0]
         super().__init__(
             shape=(n, n),
             log_pdet=self._sparse_cho_factor.slogdet(),
@@ -905,7 +906,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         self._allow_singular = False
 
     def _todense(self):
-        return self._factor @ self._factor.T
+        return (self._sparse_cho_factor.L() @ self._sparse_cho_factor.L().T).todense()
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -919,11 +920,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        # TODO
-        raise NotImplementedError(
-            "`solve` is not implemented for a sparse cholesky matrix yet!\n"
-            "Please be patient!"
-        )
+        return self._sparse_cho_factor.solve_A(b)
 
 
 class CovViaPrecisionCholesky(CovarianceMatrix):
@@ -977,9 +974,7 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
 
     """
 
-    __slots__: List[str] = [
-        "_cho_factor",
-    ]
+    __slots__: List[str] = ["_cho_factor", "_precision"]
 
     def __init__(
         self, cho_factor: ArrayLike, precision: Optional[ArrayLike] = None
@@ -1003,7 +998,11 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
             cho_factor, "cho_factor"
         )  # lower triangle
         if precision is not None:
-            self._precision = self._validate_dense_matrix(precision, "precision")
+            self._precision: Optional[NDArrayFloat] = self._validate_dense_matrix(
+                precision, "precision"
+            )
+        else:
+            self._precision = None
         n = np.shape(self._cho_factor)[0]
         super().__init__(
             shape=(n, n),
@@ -1039,7 +1038,9 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return self._precision @ b
+        if self._precision is not None:
+            return self._precision @ b
+        return self._cho_factor @ (self._cho_factor.T) @ b
 
 
 class CovViaSparsePrecisionCholesky(CovarianceMatrix):
@@ -1087,14 +1088,14 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         sparse_precision : Optional[sp.sparse.sparray], optional
             Sparse precision matrix (inverse of the covariance matrix), by default None
         """
-        self._sparse_cho_factor = sparse_cho_factor
+        self._sparse_cho_factor: SparseChoFactor = sparse_cho_factor
 
         if sparse_precision is not None:
             self._sparse_precision = self._validate_sparse_matrix(
                 sparse_precision, "sparse_precision"
             )
 
-        n = self._sparse_cho_factor.shape[0]
+        n = self._sparse_cho_factor.D().shape[0]
         super().__init__(
             shape=(n, n),
             log_pdet=-self._sparse_cho_factor.slogdet(),

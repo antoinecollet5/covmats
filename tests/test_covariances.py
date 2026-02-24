@@ -127,6 +127,22 @@ def test_CovViaPrecisionCholesky() -> None:
     assert np.allclose(res, ref)
 
 
+def test_CovViaPrecisionCholesky_whiten() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 3
+    A = rng.random(size=(n, n))
+    cov_array = A @ A.T  # make matrix symmetric positive definite
+    precision = np.linalg.inv(cov_array)
+    cov_object = covmats.CovViaPrecisionCholesky(
+        sp.linalg.cholesky(precision, lower=True)
+    )
+    x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
+    x_ = cov_object.whiten(x)
+    # near-identity covariance is expected
+    np.testing.assert_allclose(np.cov(x_, rowvar=False), np.eye(3), atol=0.01)
+
+
 def test_ensemble_covariance_matrix() -> None:
     """Test the inversion."""
 
