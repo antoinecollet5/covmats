@@ -1,3 +1,4 @@
+import covmats
 import numpy as np
 import scipy as sp
 import sksparse
@@ -47,4 +48,9 @@ def test_SparseCholeskyFactor() -> None:
     )
 
     # Test colorize with an ensemble
-    pass
+    colored_samples = scf.colorize(
+        np.random.default_rng(2027).standard_normal(size=(500_000, 11))
+    )
+    np.testing.assert_allclose(
+        covmats.CovViaEnsemble(colored_samples).todense(), A.toarray(), atol=2e-2
+    )

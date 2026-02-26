@@ -172,35 +172,23 @@ class SparseCholeskyFactor:
         return 1 / self.D
 
     def colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # We want to solve z = x @ K.T, where A = K @ K^{T}
+        # We want to solve z.T = x @ K.T, where A = K @ K^{T}
         # We use the cholesky factorization LDL' = PA'AP'
         # with P' = P^{-1} the permutation that makes the decomposition unique.
         # So LD^{1/2} = PA' and A = D^{1/2}L'P
-        # Finally z = x P' L D^{1/2}
-        return (self.apply_Pt(x.T).T @ self.L) @ self.sqrtD
-
-    def _apply_inv_sqrt_LDL(v, L, D):
-        # PAA′P′ = LDL => Cannot directly use D^{-1/2} L^{-1} P because of the
-        # permutation
-        # Now, to whiten data, we compute A^{1/2} =(AA')^{-1/2} A
-        # First, compute (AA')^{-1/2} using L and D
-        # Solve L w = v
-        w = sp.sparse.linalg.spsolve_triangular(L, v, lower=True)
-        # Scale by D^{-1/2}
-        w = w / np.sqrt(D.diagonal())
-        # Solve L^T z = w
-        z = sp.sparse.linalg.spsolve_triangular(L.T, w, lower=False)
-        return z
+        # Finally z = (P' L D^{1/2} x')'
+        return self.apply_Pt(self.L @ self.sqrtD @ x.T).T
 
     def whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         # We use the cholesky factorization LDL' = PA'AP'
         # We want to solve x = z @ A.T =>  z = x A^{-T}
         # with P' = P^{-1} the permutation that makes the decomposition unique.
         # So LD^{1/2} = PA' and A = D^{1/2}L'P
-        # Finally z = x D^{-1/2} L^{-1} P
-        return self.apply_P(
-            sp.sparse.linalg.spsolve_triangular(
-                self.L.T, (x @ self.sqrtinvD).T, unit_diagonal=True, lower=False
+        # Finally z = (D^{-1/2} L^{-1} P x')'
+        return (
+            self.sqrtinvD
+            @ sp.sparse.linalg.spsolve_triangular(
+                self.L, self.apply_P(x.T), unit_diagonal=True, lower=True
             )
         ).T
 
@@ -304,7 +292,7 @@ def get_SPD_sparse_n11_example(seed: int) -> sp.sparse.csc_array:
     vals = rng.random(len(rows), dtype=np.float64)
     L = sp.sparse.coo_array((vals, (rows, cols)), shape=(N, N))
     A = L + L.T  # make it symmetric
-    A.setdiag(N)  # make it strongly positive definite
+    A.setdiag(2.0)  # make it strongly positive definite
     A = A.tocsc()
     return A
 
