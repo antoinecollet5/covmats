@@ -33,7 +33,6 @@ from covmats._helpers import (
 )
 from covmats._sparse_helpers import (
     SparseCholeskyFactor,
-    get_sparse_covmat_variance,
 )
 from covmats._toeplitz import (
     create_toepliz_first_row,
@@ -885,7 +884,15 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return self._scf.solve_A(b)
+        return self._scf.solve(b)
+
+    def get_diagonal(self) -> NDArrayFloat:
+        """
+        Return the diagonal entries of the matrix (variances).
+        The matrix is never built explicitly. Instead the matvec interface is
+        used to multiply all column of the identity matrix.
+        """
+        return self.scf.get_diagonal()
 
 
 class CovViaPrecisionCholesky(CovarianceMatrix):
@@ -1070,7 +1077,7 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._scf.solve_A(x)
+        return self._scf.solve(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         return self.scf.colorize(self._scf, x)
@@ -1082,14 +1089,7 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         """Return x = A^{-1} b."""
         if self._sparse_precision is not None:
             return self._sparse_precision.dot(b)
-        # We want to solve x = A' A b
-        # We use the cholesky factorization LDL' = PA'AP'
-        # with P' = P^{-1} the permutation that makes the decomposition unique.
-        # So LD^{1/2} = PA' and A = D^{1/2}L'P
-        # A'A = P'L DL'P
-        L, D = self._scf.L_D()
-        D = self._scf.D()
-        return self._scf.apply_Pt(L @ D @ L.T @ self._scf.apply_P(b))
+        return self._scf.mat @ b
 
         # Check if self._scf.L() @ self._scf.L().T @ b works
 
@@ -1099,7 +1099,7 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return get_sparse_covmat_variance(self._sparse_precision, self._scf)
+        return self.scf.get_invdiagonal()
 
     def _todense(self):
         return self._scf.inv()

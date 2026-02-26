@@ -153,10 +153,23 @@ class SparseCholeskyFactor:
     def shape(self) -> Tuple[int, int]:
         return self.L.shape[:2]
 
-    def todense(self) -> NDArrayFloat:
+    @property
+    def mat(self) -> sp.sparse.csc_array:
         # Permute and rebuild
         L = self.apply_Pt(self.L)
-        return (L @ self.D @ L.T).toarray()
+        return L @ self.D @ L.T
+
+    def todense(self) -> NDArrayFloat:
+        # Permute and rebuild
+        return self.mat.toarray()
+
+    def get_diagonal(self) -> NDArrayFloat:
+        # Permute and rebuild
+        return self.mat.diagonal()
+
+    def get_invdiagonal(self) -> NDArrayFloat:
+        # Permute and rebuild
+        return 1 / self.D
 
     def colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         # We want to solve z = x @ K.T, where A = K @ K^{T}

@@ -33,6 +33,9 @@ def test_SparseCholeskyFactor() -> None:
     assert scf.shape == (11, 11)
     assert scf.n == 11
 
+    # Diagonal
+    np.testing.assert_allclose(scf.get_diagonal(), A.diagonal())
+
     # Test solve
     expected_x = np.arange(scf.n, dtype=np.float64)
     b = A @ expected_x
