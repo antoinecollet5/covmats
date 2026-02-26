@@ -45,6 +45,16 @@ Eigen decomposition
     get_linop_eigen_factorization
     eigen_factorize_cov_mat
 
+Sparse Helpers
+^^^^^^^^^^^^^^
+
+Helpers to work with sparse matrices and covariances.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    SparseCholeskyFactor
+
 Working with priors and trends
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -102,7 +112,7 @@ from covmats._priors import (
     NullPriorTerm,
     PriorTerm,
 )
-from covmats._sparse_helpers import sample_from_sparse_cov_factor
+from covmats._sparse_helpers import SparseCholeskyFactor, sample_from_sparse_cov_factor
 from covmats.data import load_precision_example_4225x
 
 __all__ = [
@@ -132,4 +142,5 @@ __all__ = [
     "__email__",
     "__author__",
     "load_precision_example_4225x",
+    "SparseCholeskyFactor",
 ]

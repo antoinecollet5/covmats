@@ -32,7 +32,7 @@ from covmats._helpers import (
     get_pts_coords_regular_grid,
 )
 from covmats._sparse_helpers import (
-    SparseChoFactor,
+    SparseCholeskyFactor,
     get_sparse_covmat_variance,
 )
 from covmats._toeplitz import (
@@ -788,41 +788,6 @@ class CovViaCholesky(CovarianceMatrix):
         return sp.linalg.cho_solve((self._cho_factor, True), b)
 
 
-def _sparse_cho_factor_colorize(
-    sparse_cho_factor: SparseChoFactor, x: NDArrayFloat
-) -> NDArrayFloat:
-    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve z = A x
-    # We use the cholesky factorization LDL' = PA'AP'
-    # with P' = P^{-1} the permutation that makes the decomposition unique.
-    # So LD^{1/2} = PA' and A = D^{1/2}L'P
-    # Finally z = D^{1/2}L'P x
-    return np.sqrt(sparse_cho_factor.D()) * (
-        sparse_cho_factor.L().T @ sparse_cho_factor.apply_P(x)
-    )
-
-
-def _sparse_cho_factor_whiten(
-    sparse_cho_factor: SparseChoFactor, x: NDArrayFloat
-) -> NDArrayFloat:
-    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve A z = x  ==> z = A^{-1} x
-    # We use the cholesky factorization LDL' = PA'AP'
-    # with P' = P^{-1} the permutation that makes the decomposition unique.
-    # So LD^{1/2} = PA' and A = D^{1/2}L'P
-    # Finally z = P'L^{-T}D^{-1/2} x
-    # Possible to do it with gmres -> not efficient without preconditioner
-    # from scipy.sparse.linalg import gmres
-    # L, D = cholQ.L_D()
-    # z, _ = cholQ.apply_Pt(
-    #    gmres(L.T.tocsc(), 1.0 / np.sqrt(D.diagonal()) * x, tol=1e-12)
-    # )
-    # CHOLMOD is the most performant
-    return sparse_cho_factor.apply_Pt(
-        sparse_cho_factor.solve_Lt(1.0 / np.sqrt(sparse_cho_factor.D()) * x)
-    )
-
-
 class CovViaSparseCholesky(CovarianceMatrix):
     r"""
     Representation of a covariance via a sparse Cholesky factorization.
@@ -876,11 +841,11 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     """
 
-    __slots__ = ["_sparse_cho_factor"]
+    __slots__ = ["_scf"]
 
     def __init__(
         self,
-        sparse_cho_factor: SparseChoFactor,
+        scf: SparseCholeskyFactor,
         sparse_covariance: Optional[sp.sparse.sparray] = None,
     ) -> None:
         """
@@ -888,39 +853,39 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
         Parameters
         ----------
-        sparse_cho_factor : SparseChoFactor
+        scf : SparseCholeskyFactor
             Lower triangle of the sparse covariance matrix Cholesky factorization.
         sparse_covariance : Optional[sp.sparse.sparray], optional
             Sparse covariance matrix, by default None
         """
-        self._sparse_cho_factor: SparseChoFactor = sparse_cho_factor
+        self._scf: SparseCholeskyFactor = scf
         if sparse_covariance is not None:
             pass
 
-        n = self._sparse_cho_factor.D().shape[0]
+        n = self._scf.D().shape[0]
         super().__init__(
             shape=(n, n),
-            log_pdet=self._sparse_cho_factor.slogdet(),
+            log_pdet=self._scf.slogdet(),
             rank=n,  # must be full rank if invertible
         )
         self._allow_singular = False
 
     def _todense(self):
-        return (self._sparse_cho_factor.L() @ self._sparse_cho_factor.L().T).todense()
+        return (self._scf.L() @ self._scf.L().T).toarray()
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor(x)
+        return self._scf(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _sparse_cho_factor_whiten(self._sparse_cho_factor, x)
+        return self.scf.whiten(self._scf, x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _sparse_cho_factor_colorize(self._sparse_cho_factor, x)
+        return self.scf.colorize(self._scf, x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return self._sparse_cho_factor.solve_A(b)
+        return self._scf.solve_A(b)
 
 
 class CovViaPrecisionCholesky(CovarianceMatrix):
@@ -1070,12 +1035,12 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
     __slots__: List[str] = [
         "_sparse_precision",
-        "_sparse_cho_factor",
+        "_scf",
     ]
 
     def __init__(
         self,
-        sparse_cho_factor: SparseChoFactor,
+        scf: SparseCholeskyFactor,
         sparse_precision: Optional[sp.sparse.sparray] = None,
     ) -> None:
         """
@@ -1083,35 +1048,35 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
         Parameters
         ----------
-        sparse_cho_factor : SparseChoFactor
+        scf : SparseCholeskyFactor
             Lower triangle of the sparse precision matrix Cholesky factorization.
         sparse_precision : Optional[sp.sparse.sparray], optional
             Sparse precision matrix (inverse of the covariance matrix), by default None
         """
-        self._sparse_cho_factor: SparseChoFactor = sparse_cho_factor
+        self._scf: SparseCholeskyFactor = scf
 
         if sparse_precision is not None:
             self._sparse_precision = self._validate_sparse_matrix(
                 sparse_precision, "sparse_precision"
             )
 
-        n = self._sparse_cho_factor.D().shape[0]
+        n = self._scf.D().shape[0]
         super().__init__(
             shape=(n, n),
-            log_pdet=-self._sparse_cho_factor.slogdet(),
+            log_pdet=-self._scf.slogdet(),
             rank=n,  # must be full rank if invertible
         )
         self._allow_singular = False
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._sparse_cho_factor.solve_A(x)
+        return self._scf.solve_A(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _sparse_cho_factor_colorize(self._sparse_cho_factor, x)
+        return self.scf.colorize(self._scf, x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return _sparse_cho_factor_whiten(self._sparse_cho_factor, x)
+        return self.scf.whiten(self._scf, x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return x = A^{-1} b."""
@@ -1122,11 +1087,11 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         # with P' = P^{-1} the permutation that makes the decomposition unique.
         # So LD^{1/2} = PA' and A = D^{1/2}L'P
         # A'A = P'L DL'P
-        L = self._sparse_cho_factor.L()
-        D = self._sparse_cho_factor.D()
-        return self._sparse_cho_factor.apply_Pt(
-            L @ D @ L.T @ self._sparse_cho_factor.apply_P(b)
-        )
+        L, D = self._scf.L_D()
+        D = self._scf.D()
+        return self._scf.apply_Pt(L @ D @ L.T @ self._scf.apply_P(b))
+
+        # Check if self._scf.L() @ self._scf.L().T @ b works
 
     def get_diagonal(self) -> NDArrayFloat:
         """
@@ -1134,12 +1099,10 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return get_sparse_covmat_variance(
-            self._sparse_precision, self._sparse_cho_factor
-        )
+        return get_sparse_covmat_variance(self._sparse_precision, self._scf)
 
     def _todense(self):
-        return self._sparse_cho_factor.inv()
+        return self._scf.inv()
 
 
 class CovViaEigenFactorization(CovarianceMatrix):
