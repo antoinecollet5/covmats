@@ -223,34 +223,6 @@ def assert_allclose_sparse(A, B, atol=1e-8, rtol=1e-8) -> None:
     np.testing.assert_allclose(v1, v2, atol=atol, rtol=rtol)
 
 
-def get_sparse_covmat_variance(scf: SparseCholeskyFactor) -> NDArrayFloat:
-    """
-    Extract efficiently the diagonal of the covariance matrix from the precision matrix.
-
-    It relies on the linear operator `matvec` operation and consequenlty does not
-    require to build the dense matrix which is much longer and generally untractable
-    for large-scale problems.
-
-    Parameters
-    ----------
-    hess_inv : LbfgsInvHessProduct
-        Linear operator for the L-BFGS approximate inverse Hessian.
-
-    Returns
-    -------
-    NDArrayFloat
-        The diagonal of the L-BFGS approximated inverse Hessian.
-    """
-    n_params = scf.shape[0]
-    cov_mat_diag = np.zeros(n_params)
-    v = np.zeros(n_params)
-    for i in range(n_params):
-        v[i - 1] = 0.0
-        v[i] = 1.0
-        cov_mat_diag[i] = scf.solve(v)[i]
-    return cov_mat_diag
-
-
 def sample_from_sparse_cov_factor(
     mean: NDArrayFloat,
     factor: sp.sparse.csc_array,
