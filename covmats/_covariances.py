@@ -1078,13 +1078,11 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         """Return the covariance matrix times the vector x."""
         return self._scf.solve(x)
 
-    # TODO: not working
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.colorize(x)
+        return self._scf.whiten_inv(x)
 
-    # TODO: not working
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.whiten(x)
+        return self._scf.colorize_inv(x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return x = A^{-1} b."""

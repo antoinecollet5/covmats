@@ -188,6 +188,13 @@ class SparseCholeskyFactor:
         # Finally z = (P' L D^{1/2} x')'
         return self.apply_Pt(self.L @ self.sqrtD @ x.T).T
 
+    def colorize_inv(self, x: NDArrayFloat) -> NDArrayFloat:
+        return self.apply_Pt(
+            sp.sparse.linalg.spsolve_triangular(
+                self.L.T, self.sqrtinvD @ x.T, unit_diagonal=True, lower=False
+            )
+        ).T
+
     def whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         # We use the cholesky factorization LDL' = PA'AP'
         # We want to solve x = z @ A.T =>  z = x A^{-T}
@@ -200,6 +207,9 @@ class SparseCholeskyFactor:
                 self.L, self.apply_P(x.T), unit_diagonal=True, lower=True
             )
         ).T
+
+    def whiten_inv(self, x: NDArrayFloat) -> NDArrayFloat:
+        return self.sqrtD @ (self.L.T @ self.apply_P(x.T)).T
 
 
 def assert_allclose_sparse(A, B, atol=1e-8, rtol=1e-8) -> None:

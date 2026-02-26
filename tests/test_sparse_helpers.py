@@ -1,9 +1,10 @@
 import covmats
 import numpy as np
+import pytest
 import scipy as sp
 import sksparse
 from covmats import SparseCholeskyFactor
-from covmats._sparse_helpers import get_SPD_sparse_n11_example
+from covmats._sparse_helpers import assert_allclose_sparse, get_SPD_sparse_n11_example
 
 
 def _get_L_D_P(A: sp.sparse.sparray):
@@ -59,3 +60,30 @@ def test_SparseCholeskyFactor() -> None:
 
     # slogdet
     np.testing.assert_allclose(np.linalg.slogdet(A.toarray())[1], scf.log_pdet)
+
+
+def test_assert_allclose_sparse() -> None:
+    L = sp.sparse.csc_array([[1.0, 0.0, 0.1], [0.1, 1.2, 0.0], [0.0, 0.0, 1.5]])
+    A = L.T @ L
+
+    # works
+    assert_allclose_sparse(A, A)
+    assert_allclose_sparse(A.T, A)
+    assert_allclose_sparse(L, L)
+
+    # shapes are not the same
+    with pytest.raises(AssertionError):
+        assert_allclose_sparse(L, L.T)
+
+    # Values are not the same
+    with pytest.raises(AssertionError):
+        assert_allclose_sparse(A, L)
+
+    # shape is not the same
+    with pytest.raises(AssertionError):
+        assert_allclose_sparse(
+            A, sp.sparse.csc_array([[1.0, 0.0, 0.1], [0.0, 0.0, 1.5]])
+        )
+
+    # empty
+    assert_allclose_sparse(sp.sparse.csc_array([[]]), sp.sparse.csc_array([[]]))
