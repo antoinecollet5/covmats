@@ -4,6 +4,8 @@ import covmats
 import numpy as np
 import pytest
 import scipy as sp
+import sksparse
+from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 
 
@@ -151,6 +153,98 @@ def test_ensemble_covariance_matrix() -> None:
 
     np.testing.assert_allclose(cov.solve(x), np.linalg.inv(cov.todense()).dot(x))
     np.testing.assert_allclose(np.trace(cov.todense()), cov.get_trace(), rtol=1e-12)
+
+
+def _get_L_D_P(A: sp.sparse.sparray):
+    """
+    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
+
+    Note that sksparse uses SuiteSparse which is LGPL licence.
+    """
+    # Need to take the API change into account
+    try:
+        # sksparse 4.x
+        L, D, P = sksparse.cholmod.ldl(A, order="amd")
+    except AttributeError:
+        # sksparse 5.x
+        f = sksparse.cholmod.cholesky(A)
+        (L, D), P = f.L_D(), f.P()
+    return L, D, P
+
+
+def test_CovViaSparseCholesky() -> None:
+
+    N: int = 11
+    A = get_SPD_sparse_n11_example(seed=2026)
+    cov = covmats.CovViaSparseCholesky(covmats.SparseCholeskyFactor(*_get_L_D_P(A)))
+
+    # Test to dense
+    np.testing.assert_allclose(cov.todense(), A.toarray())
+    # Test shape
+    assert cov.shape == (N, N)
+
+    # Diagonal
+    np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
+
+    # Test solve
+    expected_x = np.arange(N, dtype=np.float64)
+    b = A @ expected_x
+    np.allclose(cov.solve(b), expected_x)
+
+    # Test colorize and whiten
+    np.testing.assert_allclose(
+        cov.whiten(cov.colorize(np.eye(N))), np.eye(N), atol=1e-15
+    )
+
+    # Test colorize with an ensemble
+    colored_samples = cov.sample_mvnormal(
+        shape=(500_000,), random_state=np.random.default_rng(2027)
+    )
+    np.testing.assert_allclose(
+        covmats.CovViaEnsemble(colored_samples).todense(), A.toarray(), atol=2e-2
+    )
+
+
+def test_CovViaSparsePrecisionCholesky() -> None:
+
+    N: int = 11
+    # precision matrix (sparse)
+    Q = get_SPD_sparse_n11_example(seed=2026)
+    # dense covariance matrix
+    A = np.linalg.inv(Q.toarray())
+    cov = covmats.CovViaSparsePrecisionCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+    )
+
+    # Test to dense
+    np.testing.assert_allclose(cov.todense(), A)
+    # Test shape
+    assert cov.shape == (N, N)
+
+    # Diagonal
+    np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
+
+    # Dense
+    np.testing.assert_allclose(cov.precision.todense(), Q.toarray())
+    np.testing.assert_allclose(cov.todense(), A)
+
+    # Test solve
+    expected_x = np.arange(N, dtype=np.float64)
+    b = A @ expected_x
+    np.allclose(cov.solve(b), expected_x)
+
+    # Test colorize and whiten
+    np.testing.assert_allclose(
+        cov.whiten(cov.colorize(np.eye(N))), np.eye(N), atol=1e-15
+    )
+
+    # Test colorize with an ensemble
+    colored_samples = cov.sample_mvnormal(
+        shape=(500_000,), random_state=np.random.default_rng(2027)
+    )
+    np.testing.assert_allclose(
+        covmats.CovViaEnsemble(colored_samples).todense(), A, atol=2e-2
+    )
 
 
 def test_fft_covariance_matrix() -> None:

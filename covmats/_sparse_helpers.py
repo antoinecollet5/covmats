@@ -143,7 +143,7 @@ class SparseCholeskyFactor:
         )
 
     def slogdet(self) -> float:  # ty:ignore[empty-body]
-        ...
+        return 0.0
 
     @property
     def n(self) -> int:
@@ -163,13 +163,21 @@ class SparseCholeskyFactor:
         # Permute and rebuild
         return self.mat.toarray()
 
+    def inv(self) -> NDArrayFloat:
+        return self.solve(np.eye(self.n))
+
     def get_diagonal(self) -> NDArrayFloat:
         # Permute and rebuild
         return self.mat.diagonal()
 
     def get_invdiagonal(self) -> NDArrayFloat:
-        # Permute and rebuild
-        return 1 / self.D
+        cov_mat_diag = np.zeros(self.n)
+        v = np.zeros(self.n)
+        for i in range(self.n):
+            v[i - 1] = 0.0
+            v[i] = 1.0
+            cov_mat_diag[i] = self.solve(v)[i]
+        return cov_mat_diag
 
     def colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         # We want to solve z.T = x @ K.T, where A = K @ K^{T}

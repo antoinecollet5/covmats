@@ -26,6 +26,7 @@ def _get_L_D_P(A: sp.sparse.sparray):
 def test_SparseCholeskyFactor() -> None:
 
     A = get_SPD_sparse_n11_example(seed=2026)
+    Q = np.linalg.inv(A.toarray())
     scf = SparseCholeskyFactor(*_get_L_D_P(A))
 
     # Test to dense
@@ -36,6 +37,7 @@ def test_SparseCholeskyFactor() -> None:
 
     # Diagonal
     np.testing.assert_allclose(scf.get_diagonal(), A.diagonal())
+    np.testing.assert_allclose(scf.get_invdiagonal(), Q.diagonal())
 
     # Test solve
     expected_x = np.arange(scf.n, dtype=np.float64)

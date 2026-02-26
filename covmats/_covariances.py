@@ -840,7 +840,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     """
 
-    __slots__ = ["_scf"]
+    __slots__ = ["_scf", "_sparse_covariance"]
 
     def __init__(
         self,
@@ -859,28 +859,27 @@ class CovViaSparseCholesky(CovarianceMatrix):
         """
         self._scf: SparseCholeskyFactor = scf
         if sparse_covariance is not None:
-            pass
-
-        n = self._scf.D().shape[0]
+            self._validate_sparse_matrix(sparse_covariance, name="sparse_covariance")
+        self._sparse_covariance: Optional[sp.sparse.sparray] = sparse_covariance
         super().__init__(
-            shape=(n, n),
+            shape=scf.shape,
             log_pdet=self._scf.slogdet(),
-            rank=n,  # must be full rank if invertible
+            rank=scf.n,  # must be full rank if invertible
         )
         self._allow_singular = False
 
     def _todense(self):
-        return (self._scf.L() @ self._scf.L().T).toarray()
+        return self._scf.todense()
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
         return self._scf(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self.scf.whiten(self._scf, x)
+        return self._scf.whiten(x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self.scf.colorize(self._scf, x)
+        return self._scf.colorize(x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
@@ -892,7 +891,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return self.scf.get_diagonal()
+        return self._scf.get_diagonal()
 
 
 class CovViaPrecisionCholesky(CovarianceMatrix):
@@ -1066,12 +1065,12 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
             self._sparse_precision = self._validate_sparse_matrix(
                 sparse_precision, "sparse_precision"
             )
+        self._sparse_precision: Optional[sp.sparse.sparray] = sparse_precision
 
-        n = self._scf.D().shape[0]
         super().__init__(
-            shape=(n, n),
+            shape=scf.shape,
             log_pdet=-self._scf.slogdet(),
-            rank=n,  # must be full rank if invertible
+            rank=scf.n,  # must be full rank if invertible
         )
         self._allow_singular = False
 
@@ -1079,11 +1078,13 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         """Return the covariance matrix times the vector x."""
         return self._scf.solve(x)
 
+    # TODO: not working
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self.scf.colorize(self._scf, x)
+        return self._scf.colorize(x)
 
+    # TODO: not working
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self.scf.whiten(self._scf, x)
+        return self._scf.whiten(x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return x = A^{-1} b."""
@@ -1091,18 +1092,22 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
             return self._sparse_precision.dot(b)
         return self._scf.mat @ b
 
-        # Check if self._scf.L() @ self._scf.L().T @ b works
-
     def get_diagonal(self) -> NDArrayFloat:
         """
         Return the diagonal entries of the matrix (variances).
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return self.scf.get_invdiagonal()
+        return self._scf.get_invdiagonal()
 
     def _todense(self):
         return self._scf.inv()
+
+    @property
+    def precision(self) -> sp.sparse.sparray:
+        if self._sparse_precision is not None:
+            return self._sparse_precision
+        return self._scf.mat
 
 
 class CovViaEigenFactorization(CovarianceMatrix):

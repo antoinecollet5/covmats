@@ -71,6 +71,7 @@ tests = [
     "pytest-cookies",
     "coverage",
     "numdifftools",
+    "sksparse"
 ]
 examples = ["matplotlib"]
 lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
