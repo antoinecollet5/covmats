@@ -863,7 +863,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         self._sparse_covariance: Optional[sp.sparse.sparray] = sparse_covariance
         super().__init__(
             shape=scf.shape,
-            log_pdet=self._scf.slogdet(),
+            log_pdet=self._scf.log_pdet,
             rank=scf.n,  # must be full rank if invertible
         )
         self._allow_singular = False
@@ -1069,7 +1069,7 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
         super().__init__(
             shape=scf.shape,
-            log_pdet=-self._scf.slogdet(),
+            log_pdet=-self._scf.log_pdet,
             rank=scf.n,  # must be full rank if invertible
         )
         self._allow_singular = False

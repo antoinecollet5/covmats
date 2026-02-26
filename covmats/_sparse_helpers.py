@@ -142,8 +142,9 @@ class SparseCholeskyFactor:
             )
         )
 
-    def slogdet(self) -> float:  # ty:ignore[empty-body]
-        return 0.0
+    @property
+    def log_pdet(self) -> float:  # ty:ignore[empty-body]
+        return np.log(np.prod(self.D.diagonal()))
 
     @property
     def n(self) -> int:

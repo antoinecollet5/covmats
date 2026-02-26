@@ -242,9 +242,10 @@ def test_CovViaSparsePrecisionCholesky() -> None:
     colored_samples = cov.sample_mvnormal(
         shape=(500_000,), random_state=np.random.default_rng(2027)
     )
-    np.testing.assert_allclose(
-        covmats.CovViaEnsemble(colored_samples).todense(), A, atol=2e-2
-    )
+    # TODO: not working
+    np.testing.assert_allclose(covmats.CovViaEnsemble(colored_samples).todense(), A)
+
+    np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
 
 
 def test_fft_covariance_matrix() -> None:

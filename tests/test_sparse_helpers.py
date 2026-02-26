@@ -56,3 +56,6 @@ def test_SparseCholeskyFactor() -> None:
     np.testing.assert_allclose(
         covmats.CovViaEnsemble(colored_samples).todense(), A.toarray(), atol=2e-2
     )
+
+    # slogdet
+    np.testing.assert_allclose(np.linalg.slogdet(A.toarray())[1], scf.log_pdet)
