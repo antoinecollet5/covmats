@@ -16,13 +16,11 @@ import logging
 from abc import abstractmethod
 from functools import cached_property
 from time import time
-from typing import Callable, List, Optional, Sequence, Tuple, Union, no_type_check
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import scipy as sp
 from numpy.random import Generator, RandomState
-from packaging.version import Version
-from scipy import __version__ as spversion
 from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, gmres
 from scipy.spatial.distance import cdist
@@ -61,43 +59,6 @@ class CallBack:
     def clear(self) -> None:
         """Delete all results."""
         self.res = []
-
-
-@no_type_check
-def _gmres_wrapper(
-    self: CovarianceMatrix,
-    b,
-    rtol: float,
-    maxiter: int,
-    callback: CallBack,
-    M: Optional[Callable] = None,
-    atol: float = 0.0,
-) -> Tuple[NDArrayFloat, int]:
-
-    # Support for python 3.8: the gmres API has been modified in
-    # scipy from version 1.12 (tol, rtol).
-    # Unfortunately, python 3.7 and 3.8 do not support scipy-1.12
-    if Version(spversion) > Version("1.12"):
-        return gmres(
-            self,
-            b,
-            rtol=rtol,
-            maxiter=maxiter,
-            callback=callback,
-            M=M,
-            atol=0.0,
-            callback_type="legacy",
-        )
-
-    # scipy < 1.12
-    return gmres(
-        self,
-        b,
-        tol=rtol,
-        maxiter=maxiter,
-        callback=callback,
-        callback_type="legacy",
-    )
 
 
 class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
@@ -1446,7 +1407,7 @@ class CovViaEnsemble(CovarianceMatrix):
         """
         residual = CallBack()
 
-        x, info = _gmres_wrapper(
+        x, info = gmres(
             self,
             b=b,
             rtol=rtol,
@@ -1701,7 +1662,7 @@ class CovViaFFT(CovViaKernel):
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
-        x, info = _gmres_wrapper(
+        x, info = gmres(
             self,
             b=b,
             rtol=rtol,
