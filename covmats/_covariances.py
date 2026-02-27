@@ -16,7 +16,7 @@ import logging
 from abc import abstractmethod
 from functools import cached_property
 from time import time
-from typing import Callable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union, no_type_check
 
 import numpy as np
 import scipy as sp
@@ -63,6 +63,7 @@ class CallBack:
         self.res = []
 
 
+@no_type_check
 def _gmres_wrapper(
     self: CovarianceMatrix,
     b,
@@ -210,14 +211,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         eigenvalues of a square matrix. It coincides with the regular determinant
         when the matrix is non-singular.
         """
-        return np.array(self._log_pdet, dtype=float)[()]
+        return float(self._log_pdet)
 
     @property
     def rank(self) -> int:
         """
         Rank of the covariance matrix.
         """
-        return np.array(self._rank, dtype=int)[()]
+        return int(self._rank)
 
     @property
     def subspace_size(self) -> int:
@@ -613,7 +614,7 @@ class CovViaDiagonal(CovarianceMatrix):
 
     __slots__ = ["_diagonal"]
 
-    def __init__(self, diagonal: ArrayLike) -> None:  # ty:ignore[possibly-missing-attribute]
+    def __init__(self, diagonal: ArrayLike) -> None:
         """
         Initialize the instance.
 

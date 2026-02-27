@@ -39,4 +39,4 @@ repos:
     name: ty check
     entry: ty check .
     language: system
-    types: [python, pyi, jupyter]
+    types_or: [python, pyi]

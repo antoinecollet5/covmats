@@ -1,10 +1,10 @@
 import re
+from typing import no_type_check
 
 import covmats
 import numpy as np
 import pytest
 import scipy as sp
-import sksparse.cholmod as cholmod  # ty:ignore[unresolved-import]
 from covmats import SparseCholeskyFactor, load_precision_example_4225x
 from covmats._sparse_helpers import (
     assert_allclose_sparse,
@@ -13,12 +13,15 @@ from covmats._sparse_helpers import (
 )
 
 
+@no_type_check
 def _get_L_D_P(A: sp.sparse.sparray):
     """
     Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
 
     Note that sksparse uses SuiteSparse which is LGPL licence.
     """
+    import sksparse.cholmod as cholmod
+
     # Need to take the API change into account
     try:
         # sksparse 4.x

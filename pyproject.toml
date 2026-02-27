@@ -132,4 +132,4 @@ logging-format-style = "fstr"
 [tool.ty.src]
 include = ["covmats", "tests"]
 # TODO: change that when tutorials are ready
-exclude = ["notebooks"]
+exclude = ["notebooks/"]
