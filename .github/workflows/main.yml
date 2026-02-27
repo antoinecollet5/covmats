@@ -65,6 +65,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: install libsuitesparse
+        run: sudo apt install -y libsuitesparse-dev
+
       - name: Install uv + deps
         run: |
           pip install uv
