@@ -1,5 +1,7 @@
 """Some tests to refactor."""
 
+import re
+
 import covmats
 import numpy as np
 import pytest
@@ -8,6 +10,62 @@ from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 
 from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
+
+
+def test_removed_from_cholesky() -> None:
+
+    with pytest.raises(
+        NotImplementedError,
+        match=re.escape(
+            "`from_cholesky` is not available, please instantiate"
+            " with `CovViaCholesky(...)` directly!"
+        ),
+    ):
+        covmats.CovarianceMatrix.from_cholesky()
+
+
+def test_removed_from_diagonal() -> None:
+
+    with pytest.raises(
+        NotImplementedError,
+        match=re.escape(
+            "`from_diagonal` is not available, please instantiate"
+            " with `CovViaDiagonal(...)` directly!"
+        ),
+    ):
+        covmats.CovarianceMatrix.from_diagonal()
+
+
+def test_removed_from_eigendecomposition() -> None:
+
+    with pytest.raises(
+        NotImplementedError,
+        match=re.escape(
+            "`from_eigendecomposition` is not available, please instantiate"
+            " with `CovViaEigenFactorization(...)` directly!"
+        ),
+    ):
+        covmats.CovarianceMatrix.from_eigendecomposition()
+
+
+def test_removed_from_precision() -> None:
+
+    with pytest.raises(
+        NotImplementedError,
+        match=re.escape(
+            "`from_precision` is not available, please instantiate"
+            " with `CovViaPrecisionCholesky(...)` directly!"
+        ),
+    ):
+        covmats.CovarianceMatrix.from_precision()
+
+
+def test_validate_dense_matrix():
+    pass
+
+
+def test_validate_sparse_matrix():
+    pass
 
 
 def test_CovViaDiagonal_stats1() -> None:

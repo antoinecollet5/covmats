@@ -77,6 +77,20 @@ class SparseCholeskyFactor:
 
     @D.setter
     def D(self, D: sp.sparse.csc_array) -> None:
+        nnv = np.count_nonzero(D.diagonal() < 0.0)
+        if nnv != 0:
+            raise ValueError(
+                f"{nnv} negative values have been detected in `D` which "
+                "means the factorized matrix is indefinite and non invertible."
+            )
+
+        nnv = np.count_nonzero(D.diagonal() == 0.0)
+        if nnv != 0:
+            raise ValueError(
+                f"{nnv} null values have been detected in `D` which "
+                "means the factorized matrix is singular and non invertible."
+            )
+
         self._D = D
         # Update the pseudo inverse as well
         self._invD = sp.sparse.diags(1.0 / self.D.diagonal())
@@ -291,7 +305,9 @@ def get_SPD_sparse_n11_example(seed: int) -> sp.sparse.csc_array:
     return A
 
 
-def get_SPD_sparse_example(n: int, seed: int) -> sp.sparse.csc_array:
+def get_SPD_sparse_example(
+    n: int, seed: int, diag_mean: float = 10.0
+) -> sp.sparse.csc_array:
     """
     Create a symmetric positive definite matrix.
 
@@ -312,7 +328,7 @@ def get_SPD_sparse_example(n: int, seed: int) -> sp.sparse.csc_array:
 
     # Fill the diagonal with variances (non-zero values)
     np.random.seed(42)  # for reproducibility
-    variances = np.random.uniform(0.5, 2.0, n)
+    variances = np.random.uniform(-1.5, 1.5, n) + diag_mean
     for i in range(n):
         A[i, i] = variances[i]
 

@@ -114,7 +114,11 @@ def toeplitz_product(
     if dim == 1:
         padded = np.concatenate((x, np.zeros(_shape[0] - 2)))
 
-    result = np.fft.ifftn(np.fft.fftn(circ) * np.fft.fftn(padded, np.shape(circ)))
+    axes = list(np.arange(dim))
+    result = np.fft.ifftn(
+        np.fft.fftn(circ, axes=axes) * np.fft.fftn(padded, np.shape(circ), axes=axes),
+        axes=axes,
+    )
 
     # Get the result and return
     mask = [slice(0, _shape[i]) for i in range(dim)]

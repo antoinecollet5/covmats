@@ -104,7 +104,7 @@ def test_assert_allclose_sparse() -> None:
 
 def test_get_SPD_sparse_example() -> None:
 
-    A = get_SPD_sparse_example(100, 2025)
+    A = get_SPD_sparse_example(100, 2025, diag_mean=4.0)
     SparseCholeskyFactor(*_get_L_D_P(A))
 
 
@@ -112,3 +112,40 @@ def test_load_precision_example_4225x() -> None:
 
     A = load_precision_example_4225x()
     SparseCholeskyFactor(*_get_L_D_P(A))
+
+
+def test_indefinite():
+
+    A = get_SPD_sparse_example(100, 2025, diag_mean=5.0)
+    L, D, P = _get_L_D_P(A)
+    D = sp.sparse.diags(np.hstack([np.ones(100), 0.0]))
+
+    # And sparse cholesky should fail as well
+    with pytest.raises(
+        ValueError,
+        match="1 null values have been detected in `D` which means the factorized"
+        " matrix is singular and non invertible.",
+    ):
+        SparseCholeskyFactor(L, D, P)
+
+
+def test_singular():
+
+    # Produce a singular matrix
+    A = get_SPD_sparse_example(100, 2025, diag_mean=0.0)
+    # Compute the eigenvalues of a complex Hermitian or real symmetric matrix
+    sigma = np.linalg.eigvalsh(A.toarray())
+    # There are 53 negative eigen values
+    assert np.count_nonzero(sigma < 0) == 53
+
+    # classic cholesky fails
+    with pytest.raises(np.linalg.LinAlgError):
+        sp.linalg.cholesky(A.toarray())
+
+    # And sparse cholesky should fail as well
+    with pytest.raises(
+        ValueError,
+        match="53 negative values have been detected in `D` which means the factorized"
+        " matrix is indefinite and non invertible.",
+    ):
+        SparseCholeskyFactor(*_get_L_D_P(A))

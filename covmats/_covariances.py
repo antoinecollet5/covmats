@@ -188,11 +188,12 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         """
         return self._subspace_size
 
+    @abstractmethod
     def _todense(self) -> NDArrayFloat:
         """
-        Explicit dense representation of the covariance matrix.
+        Return an explicit dense representation of the covariance matrix.
         """
-        raise NotImplementedError("_todense is not implemented!")
+        ...
 
     def todense(self) -> NDArrayFloat:
         """Explicit dense representation of the covariance matrix."""
@@ -210,9 +211,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         """
         return self.todense()
 
-    def _validate_cov_mat(
-        self, A: Union[NDArrayFloat, sp.sparse.sparray], name: str
-    ) -> None:
+    @staticmethod
+    def _validate_cov_mat(A: Union[NDArrayFloat, sp.sparse.sparray], name: str) -> None:
         m, n = A.shape[-2:]
         if (
             m != n
@@ -228,18 +228,19 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
             )
             raise ValueError(message)
 
-    def _validate_dense_matrix(self, A: ArrayLike, name: str) -> NDArrayFloat:
+    @staticmethod
+    def _validate_dense_matrix(A: ArrayLike, name: str) -> NDArrayFloat:
         A = np.atleast_2d(A)
-        self._validate_cov_mat(A, name)
+        CovarianceMatrix._validate_cov_mat(A, name)
         return A
 
-    def _validate_sparse_matrix(
-        self, A: sp.sparse.sparray, name: str
-    ) -> sp.sparse.sparray:
-        self._validate_cov_mat(A, name)
+    @staticmethod
+    def _validate_sparse_matrix(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
+        CovarianceMatrix._validate_cov_mat(A, name)
         return A
 
-    def _validate_vector(self, A, name):
+    @staticmethod
+    def _validate_vector(A, name):
         A = np.atleast_1d(A)
         if A.ndim != 1 or not (
             np.issubdtype(A.dtype, np.integer) or np.issubdtype(A.dtype, np.floating)
@@ -1413,6 +1414,7 @@ class CovViaEnsemble(CovarianceMatrix):
             rtol=rtol,
             maxiter=maxiter,
             callback=residual,
+            callback_type="legacy",
             atol=0.0,
         )
         self.solvmatvecs += residual.itercount
@@ -1668,6 +1670,7 @@ class CovViaFFT(CovViaKernel):
             rtol=rtol,
             maxiter=maxiter,
             callback=residual,
+            callback_type="legacy",
             M=self._preconditioner,
             atol=0.0,
         )
