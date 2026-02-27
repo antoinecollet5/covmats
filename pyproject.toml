@@ -127,3 +127,8 @@ lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 # Format style used to check logging format string. `old` means using %
 # formatting, `new` is for `{}` formatting,and `fstr` is for f-strings.
 logging-format-style = "fstr"
+
+[tool.ty.src]
+include = ["covmats", "tests"]
+# TODO: change that when tutorials are ready
+exclude = ["notebooks"]

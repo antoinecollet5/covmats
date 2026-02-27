@@ -1,10 +1,16 @@
+import re
+
 import covmats
 import numpy as np
 import pytest
 import scipy as sp
-import sksparse
-from covmats import SparseCholeskyFactor
-from covmats._sparse_helpers import assert_allclose_sparse, get_SPD_sparse_n11_example
+import sksparse.cholmod as cholmod  # ty:ignore[unresolved-import]
+from covmats import SparseCholeskyFactor, load_precision_example_4225x
+from covmats._sparse_helpers import (
+    assert_allclose_sparse,
+    get_SPD_sparse_example,
+    get_SPD_sparse_n11_example,
+)
 
 
 def _get_L_D_P(A: sp.sparse.sparray):
@@ -16,12 +22,35 @@ def _get_L_D_P(A: sp.sparse.sparray):
     # Need to take the API change into account
     try:
         # sksparse 4.x
-        L, D, P = sksparse.cholmod.ldl(A, order="amd")
+        L, D, P = cholmod.ldl(A, order="amd")
     except AttributeError:
         # sksparse 5.x
-        f = sksparse.cholmod.cholesky(A)
+        f = cholmod.cholesky(A)
         (L, D), P = f.L_D(), f.P()
     return L, D, P
+
+
+def test_SparseCholeskyFactor_construtor() -> None:
+
+    A = get_SPD_sparse_n11_example(seed=2026)
+    L, D, P = _get_L_D_P(A)
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "`L` has shape (11, 11), "
+            "`D` has shape (11, 11), and `L` has shape (10,)!\n"
+            "To be consistent, `D` and "
+            "`P` are expected with shape (11, 11) and (11,) respectively."
+        ),
+    ):
+        SparseCholeskyFactor(L, D, P[:-1])
+
+    with pytest.raises(
+        ValueError,
+        match=("The diagonal elements of `L` are assumed to be 1!"),
+    ):
+        L[0, 0] = 3.0  # no unit diagonal
+        SparseCholeskyFactor(L, D, P)
 
 
 def test_SparseCholeskyFactor() -> None:
@@ -87,3 +116,15 @@ def test_assert_allclose_sparse() -> None:
 
     # empty
     assert_allclose_sparse(sp.sparse.csc_array([[]]), sp.sparse.csc_array([[]]))
+
+
+def test_get_SPD_sparse_example() -> None:
+
+    A = get_SPD_sparse_example(100, 2025)
+    SparseCholeskyFactor(*_get_L_D_P(A))
+
+
+def test_load_precision_example_4225x() -> None:
+
+    A = load_precision_example_4225x()
+    SparseCholeskyFactor(*_get_L_D_P(A))

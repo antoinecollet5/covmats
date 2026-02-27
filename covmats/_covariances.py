@@ -1824,42 +1824,6 @@ def eigen_factorize_cov_mat(
     )
 
 
-# TODO
-# def svds_factorize_cov_mat(
-#     cov_mat: CovarianceMatrix,
-#     n_pc: int,
-#     random_state: Optional[Union[int, RandomState, Generator]] = None,
-# ) -> CovViaEigenFactorization:
-#     """
-#     Return an eigen factorized covariance matrix from the input covariance matrix.
-
-#     Parameters
-#     ----------
-#     cov_mat : CovarianceMatrix
-#         The covariance matrix instance to decompose.
-#     n_pc : int
-#         Number of principal component in the matrix.
-#     random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
-#         Pseudorandom number generator state used to generate resamples.
-#         If `random_state` is ``None`` (or `np.random`), the
-#         `numpy.random.RandomState` singleton is used.
-#         If `random_state` is an int, a new ``RandomState`` instance is used,
-#         seeded with `random_state`.
-#         If `random_state` is already a ``Generator`` or ``RandomState``
-#         instance then that instance is used.
-
-#     Returns
-#     -------
-#     CovViaEigenFactorization
-#         Decomposed matrix instance.
-#     """
-#     if isinstance(cov_mat, CovViaEigenFactorization):
-#         return cov_mat
-#     return CovViaEigenFactorization(
-#         get_matrix_eigen_factorization(cov_mat, n_pc, random_state)
-#     )
-
-
 def get_explained_var(
     eigval: NDArrayFloat,
     cov_mat: Optional[CovarianceMatrix] = None,

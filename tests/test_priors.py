@@ -7,6 +7,7 @@ from typing import Optional
 import numpy as np
 import pytest
 from covmats import (
+    ConstantDriftMatrix,
     ConstantPriorTerm,
     DriftMatrix,
     EnsembleMeanPriorTerm,
@@ -100,7 +101,7 @@ def test_ensemble_mean_prior(
         prior = EnsembleMeanPriorTerm(shape)
         prior.shape == shape
         np.testing.assert_array_equal(prior.get_values(ensemble), expected_values)
-        assert prior.get_gradient_dot_product(vector).shape == vector.shape
+        assert np.shape(prior.get_gradient_dot_product(vector)) == vector.shape
 
 
 def test_drift_matrix() -> None:
@@ -108,6 +109,8 @@ def test_drift_matrix() -> None:
         np.array([[2.0, 3.0, 2.0], [2.0, 3.0, 2.0]]), beta=np.array([2.0, 2.0, 2.0])
     )
     assert dmat.mat.shape == (2, 3)
+    assert dmat.s_dim == 2
+    assert dmat.beta_dim == 3
 
     np.testing.assert_allclose(dmat.get_values(np.ones(2)), np.ones(2) * 14.0)
 
@@ -149,6 +152,16 @@ def test_drift_matrix_wrong_beta() -> Optional[DriftMatrix]:
         return DriftMatrix(
             np.array([[2.0, 3.0, 2.0], [2.0, 3.0, 2.0]]), beta=np.array([2.0, 2.0])
         )
+
+
+def test_constant_drift_matrix() -> None:
+    dmat = ConstantDriftMatrix(n_pts=5)
+    assert dmat.mat.shape == (5, 1)
+
+    dmat = ConstantDriftMatrix(n_pts=4)
+    assert dmat.mat.shape == (4, 1)
+
+    assert dmat.get_gradient_dot_product(np.ones(45)) == 0.0
 
 
 def test_linear_drift_matrix() -> None:

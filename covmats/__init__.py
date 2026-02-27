@@ -83,6 +83,17 @@ To work with covariance matrices and low rank approximations.
     sample_from_sparse_cov_factor
     get_explained_var
 
+Test data
+^^^^^^^^^
+Functions providing test data.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    load_precision_example_4225x
+    get_SPD_sparse_n11_example,
+    get_SPD_sparse_example,
+
 
 """
 
@@ -112,7 +123,12 @@ from covmats._priors import (
     NullPriorTerm,
     PriorTerm,
 )
-from covmats._sparse_helpers import SparseCholeskyFactor, sample_from_sparse_cov_factor
+from covmats._sparse_helpers import (
+    SparseCholeskyFactor,
+    get_SPD_sparse_example,
+    get_SPD_sparse_n11_example,
+    sample_from_sparse_cov_factor,
+)
 from covmats.data import load_precision_example_4225x
 
 __all__ = [
@@ -143,4 +159,6 @@ __all__ = [
     "__author__",
     "load_precision_example_4225x",
     "SparseCholeskyFactor",
+    "get_SPD_sparse_n11_example",
+    "get_SPD_sparse_example",
 ]

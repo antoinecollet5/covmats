@@ -200,7 +200,7 @@ class EnsembleMeanPriorTerm(PriorTerm):
                 " with N_s the number of adjuted values and N_e the number of"
                 " members in the ensemble."
             )
-        self.shape: Tuple[int, int] = shape
+        self.shape: Tuple[int, ...] = shape
 
     def get_values(self, params: NDArrayFloat) -> NDArrayFloat:
         """
@@ -236,11 +236,10 @@ class EnsembleMeanPriorTerm(PriorTerm):
         NDArrayFloat
             Prior gradient-input vector dot product.
         """
-        if input.shape[0] != self.shape[0]:  # type: ignore
+        if input.shape[0] != self.shape[0]:
             raise ValueError(
                 f"Expected a vector of size {self.shape[0]}, got {input.shape}."
             )
-
         return input / self.shape[1]
 
 
@@ -268,7 +267,7 @@ class DriftMatrix(PriorTerm):
             if isinstance(beta, float):
                 shape = (1,)
             else:
-                shape = beta.shape
+                shape = np.shape(beta)
             if shape[0] != mat.shape[1]:
                 raise ValueError(
                     f"beta has shape {shape} while it should be shape "

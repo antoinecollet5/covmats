@@ -50,9 +50,12 @@ class SparseCholeskyFactor:
 
         # Assert shapes are ok.
         if self.D.shape != self.shape or self.P.size != self.n:
-            raise ValueError("TODO!")
-
-    # Compute LA @ LA' = P @ A @ P'
+            raise ValueError(
+                f"`L` has shape {self.shape},"
+                f" `D` has shape {D.shape}, and `L` has shape {self.P.shape}!\n"
+                f"To be consistent, `D` and `P` are expected with shape {self.shape}"
+                f" and ({self.n},) respectively."
+            )
 
     @property
     def L(self) -> sp.sparse.csc_array:
@@ -143,7 +146,7 @@ class SparseCholeskyFactor:
         )
 
     @property
-    def log_pdet(self) -> float:  # ty:ignore[empty-body]
+    def log_pdet(self) -> float:
         return np.log(np.prod(self.D.diagonal()))
 
     @property

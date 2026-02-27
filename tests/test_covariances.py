@@ -4,16 +4,30 @@ import covmats
 import numpy as np
 import pytest
 import scipy as sp
-import sksparse
 from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 
-
-def test_get_shape() -> None:
-    """A test to see if all matrice handle the shape and npts correctly."""
+from test_sparse_helpers import _get_L_D_P
 
 
-def test_CovViaDiagonal() -> None:
+def test_CovViaDiagonal_stats1() -> None:
+
+    d = [1, 2, 3]
+    A33 = np.diag(d)  # a diagonal covariance matrix
+    x = [4, -2, 5]  # a point of interest
+    ref_dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=A33)
+
+    # Make a diagonal covariance matrix
+    cov_diag33 = covmats.CovViaDiagonal(d)
+    assert cov_diag33.rank == 3
+    np.testing.assert_allclose(cov_diag33.log_pdet, 1.791759, rtol=1e-6)
+    assert cov_diag33.get_trace() == 6
+
+    cov_dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=cov_diag33)
+    np.testing.assert_allclose(ref_dist.pdf(x), cov_dist.pdf(x))
+
+
+def test_CovViaDiagonal_stats2() -> None:
 
     rng = np.random.default_rng(2026)
     n = 5
@@ -30,6 +44,18 @@ def test_CovViaDiagonal() -> None:
     res = cov.log_pdet
     ref = np.linalg.slogdet(A)[-1]
     assert np.allclose(res, ref)
+
+
+# def test_CovViaDiagonal_aslinop() -> None:
+
+#     d = [1, 2, 3]
+#     A33 = np.diag(d)  # a diagonal covariance matrix
+#     x = [4, -2, 5]  # a point of interest
+#     dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=A33)
+
+#     np.testingdist.pdf(x)
+
+#     cov_diag33.rank, cov_diag33.log_pdet, cov_diag33.get_trace()
 
 
 def test_CovViaCholesky_log_pdet() -> None:
@@ -153,23 +179,6 @@ def test_ensemble_covariance_matrix() -> None:
 
     np.testing.assert_allclose(cov.solve(x), np.linalg.inv(cov.todense()).dot(x))
     np.testing.assert_allclose(np.trace(cov.todense()), cov.get_trace(), rtol=1e-12)
-
-
-def _get_L_D_P(A: sp.sparse.sparray):
-    """
-    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
-
-    Note that sksparse uses SuiteSparse which is LGPL licence.
-    """
-    # Need to take the API change into account
-    try:
-        # sksparse 4.x
-        L, D, P = sksparse.cholmod.ldl(A, order="amd")
-    except AttributeError:
-        # sksparse 5.x
-        f = sksparse.cholmod.cholesky(A)
-        (L, D), P = f.L_D(), f.P()
-    return L, D, P
 
 
 def test_CovViaSparseCholesky() -> None:
@@ -316,6 +325,9 @@ def test_eigen_decompose_and_associated_functions() -> None:
     # should return the matrix as is
     eig_mat = covmats.eigen_factorize_cov_mat(eig_mat, 50)
     assert eig_mat.n_pc == 100  # and not 50 !
+
+    # no random state for the test
+    _ = covmats.get_linop_eigen_factorization(eig_mat, 50, n_pc=12)
 
     # This is determined form the eigen vectors
     assert eig_mat.number_pts == 225
