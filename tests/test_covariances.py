@@ -7,7 +7,7 @@ import scipy as sp
 from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 
-from test_sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
+from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
 
 
 def test_CovViaDiagonal_stats1() -> None:

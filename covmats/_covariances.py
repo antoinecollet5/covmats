@@ -211,14 +211,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         eigenvalues of a square matrix. It coincides with the regular determinant
         when the matrix is non-singular.
         """
-        return float(self._log_pdet)
+        return np.array(self._log_pdet, dtype=float)[()]
 
     @property
     def rank(self) -> int:
         """
         Rank of the covariance matrix.
         """
-        return int(self._rank)
+        return np.array(self._rank, dtype=int)[()]
 
     @property
     def subspace_size(self) -> int:
