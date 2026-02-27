@@ -54,7 +54,7 @@ version = { attr = "covmats.__about__.__version__" }
 [project.optional-dependencies]
 all = ['covmats[install, lint, tests, examples, docs]']
 docs = [
-    covmats[examples]
+    covmats[examples],
     "sphinx<9",
     "nbsphinx",
     "nbsphinx-link>=1.3.1",
