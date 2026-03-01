@@ -6,10 +6,21 @@ import covmats
 import numpy as np
 import pytest
 import scipy as sp
+from covmats._covariances import CallBack
 from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 
 from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
+
+
+def test_CallBack():
+    c = CallBack()
+    assert c.itercount == 0
+    for i in range(3):
+        c(np.ones(10))
+    assert c.itercount == 3
+    c.clear()
+    assert c.itercount == 0
 
 
 def test_removed_from_cholesky() -> None:
@@ -60,12 +71,53 @@ def test_removed_from_precision() -> None:
         covmats.CovarianceMatrix.from_precision()
 
 
-def test_validate_dense_matrix():
-    pass
+def test_validate_dense_matrix() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "The input `my_arg` must be a square, "
+            "two-dimensional array of real numbers."
+        ),
+    ):
+        covmats.CovarianceMatrix._validate_dense_matrix(np.ones((10, 9)), "my_arg")
+
+    # no issue
+    covmats.CovarianceMatrix._validate_dense_matrix(np.ones((10, 10)), "my_arg")
 
 
 def test_validate_sparse_matrix():
-    pass
+    with pytest.raises(
+        ValueError,
+        match=(
+            "The input `my_arg` must be a square, "
+            "two-dimensional array of real numbers."
+        ),
+    ):
+        covmats.CovarianceMatrix._validate_sparse_matrix(
+            sp.sparse.csc_array((10, 9)), "my_arg"
+        )
+
+    # No issue
+    covmats.CovarianceMatrix._validate_sparse_matrix(
+        sp.sparse.csc_array((10, 10)), "my_arg"
+    )
+
+
+def test_validate_vector():
+    with pytest.raises(
+        ValueError,
+        match=("The input `my_arg` must be a one-dimensional array of real numbers."),
+    ):
+        covmats.CovarianceMatrix._validate_vector(np.ones((2, 2)), "my_arg")
+
+    with pytest.raises(
+        ValueError,
+        match=("The input `my_arg` must be a one-dimensional array of real numbers."),
+    ):
+        covmats.CovarianceMatrix._validate_vector(np.ones((2, 1)), "my_arg")
+
+    # No issue
+    covmats.CovarianceMatrix._validate_vector(np.ones(((2,))), "my_arg")
 
 
 def test_CovViaDiagonal_stats1() -> None:
@@ -83,6 +135,10 @@ def test_CovViaDiagonal_stats1() -> None:
 
     cov_dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=cov_diag33)
     np.testing.assert_allclose(ref_dist.pdf(x), cov_dist.pdf(x))
+
+    # Test to dense and covariance
+    np.testing.assert_allclose(cov_diag33.todense(), A33)
+    np.testing.assert_allclose(cov_diag33.covariance, A33)
 
 
 def test_CovViaDiagonal_stats2() -> None:
@@ -104,16 +160,28 @@ def test_CovViaDiagonal_stats2() -> None:
     assert np.allclose(res, ref)
 
 
-# def test_CovViaDiagonal_aslinop() -> None:
+def test_CovViaDiagonal_aslinop() -> None:
 
-#     d = [1, 2, 3]
-#     A33 = np.diag(d)  # a diagonal covariance matrix
-#     x = [4, -2, 5]  # a point of interest
-#     dist = sp.stats.multivariate_normal(mean=[0, 0, 0], cov=A33)
+    d = [1, 2, 3]
+    # Make a diagonal covariance matrix
+    cov_diag33 = covmats.CovViaDiagonal(d)
 
-#     np.testingdist.pdf(x)
+    v3 = np.array([3.0, 1.0, 8.0])
 
-#     cov_diag33.rank, cov_diag33.log_pdet, cov_diag33.get_trace()
+    # matvec and rmatvec
+    np.testing.assert_allclose(cov_diag33 @ v3, np.array([3.0, 2.0, 24.0]))
+    np.testing.assert_allclose(cov_diag33 @ v3, cov_diag33.T @ v3)
+
+    V3 = np.vstack([v3] * 4).T
+    assert np.shape(V3) == (3, 4)
+
+    # matmat
+    np.testing.assert_allclose(
+        cov_diag33 @ V3, np.vstack([np.array([3.0, 2.0, 24.0])] * 4).T
+    )
+
+    # rmatmat
+    np.testing.assert_allclose(cov_diag33 @ V3, cov_diag33.T @ V3)
 
 
 def test_CovViaCholesky_log_pdet() -> None:
@@ -134,6 +202,33 @@ def test_CovViaCholesky_log_pdet() -> None:
     res = cov.log_pdet
     ref = np.linalg.slogdet(A)[-1]
     assert np.allclose(res, ref)
+
+
+def test_CovViaCholesky_aslinop() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
+    v5 = rng.random(size=n)
+
+    L = np.linalg.cholesky(A)
+    cov = covmats.CovViaCholesky(L)
+
+    expected = np.array([2.057481, 3.125178, 4.043185, 2.370566, 2.195569])
+
+    # matvec and rmatvec
+    np.testing.assert_allclose(cov @ v5, expected, rtol=1e-6)
+    np.testing.assert_allclose(cov @ v5, cov.T @ v5)
+
+    V5 = np.vstack([v5] * 4).T
+    assert np.shape(V5) == (5, 4)
+
+    # matmat
+    np.testing.assert_allclose(cov @ V5, np.vstack([expected] * 4).T, rtol=1e-6)
+
+    # rmatmat
+    np.testing.assert_allclose(cov @ V5, cov.T @ V5)
 
 
 def test_CovViaDioagonal_mvnormal() -> None:
@@ -333,7 +428,7 @@ def test_fft_covariance_matrix() -> None:
     len_scale = np.array([1, 1])
     mesh_dim = (dx, dy)
 
-    cov = covmats.CovViaFFT(
+    cov = covmats.CovKernelAsLinopViaFFT(
         exponential_kernel,
         mesh_dim=mesh_dim,
         domain_shape=param_shape,
@@ -343,9 +438,9 @@ def test_fft_covariance_matrix() -> None:
     )
 
     # tests
-    assert cov.number_pts == 225
+    assert cov.n_pts == 225
     np.testing.assert_allclose(cov.get_diagonal(), np.ones(_number_grid_cells) * 4.0)
-    assert cov.get_trace() == 900
+    assert np.sum(cov.get_diagonal()) == 900
 
     # reinitiate comptors
     cov.reset_comptors()
@@ -369,7 +464,7 @@ def test_eigen_decompose_and_associated_functions() -> None:
     len_scale = np.array([1, 1])
     mesh_dim = (dx, dy)
 
-    cov_mat_fft = covmats.CovViaFFT(
+    cov_mat_fft = covmats.CovKernelAsLinopViaFFT(
         exponential_kernel,
         mesh_dim=mesh_dim,
         domain_shape=param_shape,
@@ -388,7 +483,7 @@ def test_eigen_decompose_and_associated_functions() -> None:
     _ = covmats.get_linop_eigen_factorization(eig_mat, 50, n_pc=12)
 
     # This is determined form the eigen vectors
-    assert eig_mat.number_pts == 225
+    assert eig_mat.n_pts == 225
 
     np.testing.assert_allclose(
         eig_mat.get_diagonal(), cov_mat_fft.get_diagonal(), rtol=0.05
@@ -484,92 +579,3 @@ def test_negative_eigen_values() -> None:
 #     np.testing.assert_array_equal(cov.T @ np.ones(3), np.array([12.0, 15.0, 18.0]))
 #     np.testing.assert_array_equal(cov.get_diagonal(), np.array([1.0, 5.0, 9.0]))
 #     assert cov.get_trace() == 15.0
-
-
-# def test_that_man() -> None:
-
-#     _number_grid_cells = 2500
-#     _pts = np.random.rand(_number_grid_cells, 2)
-
-#     def _kernel(R):
-#         return np.exp(-R)
-
-#     param_shape = np.array([np.sqrt(_number_grid_cells),
-# np.sqrt(_number_grid_cells)], dtype=np.int8)
-#     # _params = {"R": 1.0e-4, "kappa": 100}
-#     dx = 1. / 50.
-#     dy = 1. / 50.
-#     _xmin = np.array([0.0, 0.0])
-#     _xmax = np.array([1.0, 1.0])
-#     _theta = np.array([1, 1])
-#     mesh_dim = (dx, dy)
-
-#     Q = CovViaFFT(
-#         _kernel,
-#         mesh_dim=mesh_dim,
-#         domain_shape=param_shape,
-#         len_scale=_theta,
-#         nugget=1e-4,
-#     )
-
-#     _x = np.ones((_number_grid_cells,), dtype="d")
-#     _y = Q.matvec(_x)
-#     # preconditioner = build_preconditioner(_pts, _kernel, k=30)
-#     xd = Q.solve(_y)
-#     print(np.linalg.norm(_x - xd) / np.linalg.norm(_x))
-#     # y = Q.realizations()
-
-#     # To visualize preconditioner:
-#     # if view == True:
-#     #     plt.spy(self.P,markersize = 0.05)
-#     #     print(float(self.P.getnnz())/N**2.)
-#     #     plt.savefig('sp.eps')
-
-#     def kernel(R):
-#         return 0.01 * np.exp(-R)
-
-#     # dim = 1
-#     # N = np.array([5])
-#     # dim = 2
-#     # N = np.array([2, 3])
-#     dim = 3
-#     N = np.array([5, 6, 7])
-
-#     row, pts = create_row(
-#         np.array(mesh_dim) ,N, kernel, np.ones((dim), dtype="d")
-#     )
-#     # n = pts.shape
-#     # for i in np.arange(n[0]):
-#     #    print(pts[i, 0], pts[i, 1])
-#     if dim == 1:
-#         v = np.random.rand(N[0])
-#     elif dim == 2:
-#         v = np.random.rand(N[0] * N[1])
-#     elif dim == 3:
-#         v = np.random.rand(N[0] * N[1] * N[2])
-#     else:
-#         raise ValueError()
-
-#     res = toeplitz_product(v, row, N)
-
-#     # r1, r2, ep = Realizations(row, N)
-#     # import scipy.io as sio
-#     # sio.savemat('Q.mat',
-# {'row':row,'pts':pts,'N':N,'r1':r1,'r2':r2,'ep':ep,'v':v,'res':res})
-
-#     mat = generate_dense_matrix(pts, kernel)
-#     res1 = np.dot(mat, v)
-
-#     print(
-#         "rel. error %g for cov. mat. row (CreateRow)"
-#         % (np.linalg.norm(mat[0, :] - row) / np.linalg.norm(mat[0, :]))
-#     )
-#     print("rel. error %g" % (np.linalg.norm(res - res1) / np.linalg.norm(res1)))
-#     # print(mat[0,:])
-#     # print(row)
-#     # print(res1)
-#     # print(np.linalg.norm(res1))
-#     # print(np.linalg.norm(res1))
-#     # print(np.linalg.norm(res1))
-#     # print(np.linalg.norm(res1))
-#     # print(np.linalg.norm(res1))

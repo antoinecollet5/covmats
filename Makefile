@@ -55,12 +55,15 @@ clean-test: ## remove test and coverage artifacts
 test: ## run tests quickly with the default Python
 	pytest
 
-test-all: ## run tests on every Python version with tox
-	tox
-
-coverage: ## check code coverage quickly with the default Python
+tox: ## check code coverage quickly with the default Python
 	tox
 	coverage combine
+	coverage report -m
+	coverage html
+	$(BROWSER) htmlcov/index.html
+
+coverage: ## check code coverage quickly with the default Python
+	coverage run --source covmats -m pytest
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html

@@ -15,7 +15,7 @@ To represent covariance matrices.
    :toctree: _autosummary
 
     CovarianceMatrix
-    CovViaKernel
+    CovKernelAsLinop
 
 Specialized Covariance classes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -32,7 +32,7 @@ Various representation of covariance matrices.
     CovViaSparsePrecisionCholesky
     CovViaEigenFactorization
     CovViaEnsemble
-    CovViaFFT
+    CovKernelAsLinopViaFFT
 
 Matrix compression
 ^^^^^^^^^^^^^^^^^^^
@@ -100,12 +100,12 @@ Functions providing test data.
 from covmats.__about__ import __author__, __email__, __version__
 from covmats._covariances import (
     CovarianceMatrix,
+    CovKernelAsLinop,
+    CovKernelAsLinopViaFFT,
     CovViaCholesky,
     CovViaDiagonal,
     CovViaEigenFactorization,
     CovViaEnsemble,
-    CovViaFFT,
-    CovViaKernel,
     CovViaPrecisionCholesky,
     CovViaSparseCholesky,
     CovViaSparsePrecisionCholesky,
@@ -140,8 +140,8 @@ __all__ = [
     "CovViaSparsePrecisionCholesky",
     "CovViaEigenFactorization",
     "CovViaEnsemble",
-    "CovViaFFT",
-    "CovViaKernel",
+    "CovKernelAsLinopViaFFT",
+    "CovKernelAsLinop",
     "PriorTerm",
     "NullPriorTerm",
     "ConstantPriorTerm",
