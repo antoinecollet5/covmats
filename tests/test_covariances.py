@@ -12,6 +12,10 @@ from covmats._types import NDArrayFloat
 
 from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
 
+v3 = np.array([3.0, 1.0, 8.0])
+V34 = np.vstack([v3] * 4).T
+assert np.shape(V34) == (3, 4)
+
 
 def test_CallBack():
     c = CallBack()
@@ -166,22 +170,21 @@ def test_CovViaDiagonal_aslinop() -> None:
     # Make a diagonal covariance matrix
     cov_diag33 = covmats.CovViaDiagonal(d)
 
-    v3 = np.array([3.0, 1.0, 8.0])
-
     # matvec and rmatvec
     np.testing.assert_allclose(cov_diag33 @ v3, np.array([3.0, 2.0, 24.0]))
     np.testing.assert_allclose(cov_diag33 @ v3, cov_diag33.T @ v3)
 
-    V3 = np.vstack([v3] * 4).T
-    assert np.shape(V3) == (3, 4)
-
     # matmat
     np.testing.assert_allclose(
-        cov_diag33 @ V3, np.vstack([np.array([3.0, 2.0, 24.0])] * 4).T
+        cov_diag33 @ V34, np.vstack([np.array([3.0, 2.0, 24.0])] * 4).T
     )
 
     # rmatmat
-    np.testing.assert_allclose(cov_diag33 @ V3, cov_diag33.T @ V3)
+    np.testing.assert_allclose(cov_diag33 @ V34, cov_diag33.T @ V34)
+
+    # solve
+    np.testing.assert_allclose(cov_diag33.solve(cov_diag33 @ v3), v3)
+    np.testing.assert_allclose(cov_diag33.solve(cov_diag33 @ V34), V34)
 
 
 def test_CovViaCholesky_log_pdet() -> None:
