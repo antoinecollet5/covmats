@@ -16,6 +16,10 @@ v3 = np.array([3.0, 1.0, 8.0])
 V34 = np.vstack([v3] * 4).T
 assert np.shape(V34) == (3, 4)
 
+v5 = np.array([3.0, 0.0, 8.0, 9.76, -1.87])
+V54 = np.vstack([v5] * 4).T
+assert np.shape(V54) == (5, 4)
+
 
 def test_CallBack():
     c = CallBack()
@@ -137,6 +141,27 @@ def test_validate_dense_lower_triangle():
     )
 
 
+def test_CovViaDiagonal_singular_or_indefinite() -> None:
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "2 null values have been detected in `D` which "
+            "means the matrix is singular and non invertible."
+        ),
+    ):
+        covmats.CovViaDiagonal(np.array([1.0, 0.0, 0.0, 8.789]))
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "1 negative values have been detected in `D` which "
+            "means the matrix is indefinite and non invertible."
+        ),
+    ):
+        covmats.CovViaDiagonal(np.array([1.0, 0.001, -1.9, 8.789]))
+
+
 def test_CovViaDiagonal_stats1() -> None:
 
     d = [1, 2, 3]
@@ -199,55 +224,13 @@ def test_CovViaDiagonal_aslinop() -> None:
     np.testing.assert_allclose(cov_diag33.solve(cov_diag33 @ v3), v3)
     np.testing.assert_allclose(cov_diag33.solve(cov_diag33 @ V34), V34)
 
-
-def test_CovViaCholesky_log_pdet() -> None:
-
-    rng = np.random.default_rng(2026)
-    n = 5
-    A = rng.random(size=(n, n))
-    A = A @ A.T  # make the covariance symmetric positive definite
-    x = rng.random(size=n)
-
-    L = np.linalg.cholesky(A)
-    cov = covmats.CovViaCholesky(L)
-
-    res = cov.whiten(x)
-    ref = sp.linalg.solve_triangular(L, x, lower=True)
-    assert np.allclose(res, ref)
-
-    res = cov.log_pdet
-    ref = np.linalg.slogdet(A)[-1]
-    assert np.allclose(res, ref)
+    # Get precision matrix (inverse)
+    np.testing.assert_allclose(
+        np.linalg.inv(cov_diag33.todense()), cov_diag33.precision
+    )
 
 
-def test_CovViaCholesky_aslinop() -> None:
-
-    rng = np.random.default_rng(2026)
-    n = 5
-    A = rng.random(size=(n, n))
-    A = A @ A.T  # make the covariance symmetric positive definite
-    v5 = rng.random(size=n)
-
-    L = np.linalg.cholesky(A)
-    cov = covmats.CovViaCholesky(L)
-
-    expected = np.array([2.057481, 3.125178, 4.043185, 2.370566, 2.195569])
-
-    # matvec and rmatvec
-    np.testing.assert_allclose(cov @ v5, expected, rtol=1e-6)
-    np.testing.assert_allclose(cov @ v5, cov.T @ v5)
-
-    V5 = np.vstack([v5] * 4).T
-    assert np.shape(V5) == (5, 4)
-
-    # matmat
-    np.testing.assert_allclose(cov @ V5, np.vstack([expected] * 4).T, rtol=1e-6)
-
-    # rmatmat
-    np.testing.assert_allclose(cov @ V5, cov.T @ V5)
-
-
-def test_CovViaDioagonal_mvnormal() -> None:
+def test_CovViaDiagonal_mvnormal() -> None:
 
     covd = covmats.CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
     rng_seed = 42
@@ -273,6 +256,63 @@ def test_CovViaDioagonal_mvnormal() -> None:
         ),
     )
     assert x.shape == (2, 4, 3)
+
+
+def test_CovViaCholesky_log_stats() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
+    x = rng.random(size=n)
+
+    L = np.linalg.cholesky(A)
+    cov = covmats.CovViaCholesky(L)
+
+    res = cov.whiten(x)
+    ref = sp.linalg.solve_triangular(L, x, lower=True)
+    assert np.allclose(res, ref)
+
+    res = cov.log_pdet
+    ref = np.linalg.slogdet(A)[-1]
+    assert np.allclose(res, ref)
+
+
+def test_CovViaCholesky_aslinop() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
+
+    L = np.linalg.cholesky(A)
+    cov = covmats.CovViaCholesky(L)
+
+    # Check to dense
+    np.testing.assert_allclose(cov.todense(), A)
+
+    expected = np.array([20.932923, 33.649514, 42.873409, 25.55103, 22.343875])
+
+    # matvec and rmatvec
+    np.testing.assert_allclose(cov @ v5, expected, rtol=1e-6)
+    np.testing.assert_allclose(cov @ v5, cov.T @ v5)
+
+    # matmat
+    np.testing.assert_allclose(cov @ V54, np.vstack([expected] * 4).T, rtol=1e-6)
+
+    # rmatmat
+    np.testing.assert_allclose(cov @ V54, cov.T @ V54)
+
+    # solve
+    np.testing.assert_allclose(cov.solve(cov @ v5), v5, atol=1e-13)
+    np.testing.assert_allclose(cov.solve(cov @ V54), V54, atol=1e-13)
+
+    # Get precision matrix (inverse)
+    np.testing.assert_allclose(np.linalg.inv(A), cov.precision)
+
+    # Test to dense with original covariance stored
+    cov2 = covmats.CovViaCholesky(L, covariance=A)
+    np.testing.assert_allclose(cov2.todense(), A)
 
 
 def test_CovViaCholesky_mvnormal() -> None:

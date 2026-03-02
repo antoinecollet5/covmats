@@ -707,7 +707,7 @@ class CovViaCholesky(CovarianceMatrix):
 
     """
 
-    __slots__ = ["_L"]
+    __slots__ = ["_L", "_covariance"]
 
     def __init__(self, L: ArrayLike, covariance: Optional[ArrayLike] = None) -> None:
         """
@@ -723,7 +723,9 @@ class CovViaCholesky(CovarianceMatrix):
         self.L = L
         super().__init__()
         if covariance is not None:
-            self._covariance = self.validate_matrix(covariance)
+            self._covariance = self._validate_dense_matrix(covariance, "covariance")
+        else:
+            self._covariance = None
 
     @property
     def L(self) -> NDArrayFloat:
@@ -746,9 +748,11 @@ class CovViaCholesky(CovarianceMatrix):
         """
         Explicit dense representation of the precision matrix.
         """
-        return None
+        return self.solve(np.eye(self.n_pts))
 
     def _todense(self) -> NDArrayFloat:
+        if self._covariance is not None:
+            return self._covariance
         return self.L @ self.L.T
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
