@@ -1464,18 +1464,24 @@ class CovViaEnsemble(CovarianceMatrix):
         Note that the dense covariance matrix is never built.
         """
         residual = CallBack()
-
-        x, info = gmres(
-            self,
-            b=b,
-            rtol=rtol,
-            maxiter=maxiter,
-            callback=residual,
-            callback_type="legacy",
-            atol=0.0,
-        )
-        self.solvmatvecs += residual.itercount
-        return x
+        # make sure to have 2d array
+        _b = np.reshape(b, (self.n_pts, -1))
+        nv = np.shape(_b)[1]
+        x = np.zeros_like(_b)
+        # does not work for matrices ?
+        for i in range(nv):
+            x[:, i], info = gmres(
+                self,
+                b=_b[:, i],
+                rtol=rtol,
+                maxiter=maxiter,
+                callback=residual,
+                callback_type="legacy",
+                atol=0.0,
+            )
+            self.solvmatvecs += residual.itercount
+        # Get the original shape back
+        return x.reshape(np.shape(b))
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -1483,7 +1489,7 @@ class CovViaEnsemble(CovarianceMatrix):
 
     @property
     def precision(self) -> sp.sparse.sparray:
-        raise NotImplementedError("Be patient...")
+        return self.solve(np.eye(self.n_pts))
 
 
 def _generate_dense_matrix_from_kernel(

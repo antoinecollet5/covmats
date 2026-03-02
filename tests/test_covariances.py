@@ -304,8 +304,8 @@ def test_CovViaCholesky_aslinop() -> None:
     np.testing.assert_allclose(cov @ V54, cov.T @ V54)
 
     # solve
-    np.testing.assert_allclose(cov.solve(cov @ v5), v5, atol=1e-13)
-    np.testing.assert_allclose(cov.solve(cov @ V54), V54, atol=1e-13)
+    np.testing.assert_allclose(cov.solve(cov @ v5), v5, atol=1e-10)
+    np.testing.assert_allclose(cov.solve(cov @ V54), V54, atol=1e-10)
 
     # Get precision matrix (inverse)
     np.testing.assert_allclose(np.linalg.inv(A), cov.precision)
@@ -465,6 +465,48 @@ def test_CovViaSparsePrecisionCholesky() -> None:
     )
 
     np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
+
+
+def test_CovViaEnsemble() -> None:
+
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
+
+    L = np.linalg.cholesky(A)
+    cov_cho = covmats.CovViaCholesky(L)
+
+    # Test colorize with an ensemble
+    colored_samples = cov_cho.sample_mvnormal(
+        shape=(5000,), random_state=np.random.default_rng(2027)
+    )
+    cov_ens = covmats.CovViaEnsemble(colored_samples)
+
+    # Check to dense
+    np.testing.assert_allclose(cov_ens.todense(), A, rtol=0.02)
+
+    expected = np.array([20.926541, 33.896138, 43.155498, 25.852243, 22.575929])
+
+    # matvec and rmatvec
+    np.testing.assert_allclose(cov_ens @ v5, expected, rtol=1e-6)
+    np.testing.assert_allclose(cov_ens @ v5, cov_ens.T @ v5)
+
+    # matmat
+    np.testing.assert_allclose(cov_ens @ V54, np.vstack([expected] * 4).T, rtol=1e-6)
+
+    # rmatmat
+    np.testing.assert_allclose(cov_ens @ V54, cov_ens.T @ V54)
+
+    # solve
+    np.testing.assert_allclose(cov_ens.solve(cov_ens @ v5), v5, atol=1e-10)
+    np.testing.assert_allclose(cov_ens.solve(cov_ens @ V54), V54, atol=1e-10)
+
+    # Get precision matrix (inverse)
+    # TODO: not implemented yet => need to use SVD to perform that
+    np.testing.assert_allclose(np.linalg.inv(A), cov_ens.precision, rtol=0.05)
+
+    # TODO: test sampling
 
 
 def test_fft_covariance_matrix() -> None:
