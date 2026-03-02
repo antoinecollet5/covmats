@@ -1230,6 +1230,9 @@ class CovViaEigenFactorization(CovarianceMatrix):
     def eig_vals(self, value: NDArrayFloat) -> None:
         """Return the Eigen values."""
         self._w = np.reshape(value, (-1, 1))
+        self._sqrt_w = np.sqrt(self._w)
+        self._inv_w = 1.0 / self._w
+        self._inv_sqrt_w = 1.0 / (self._sqrt_w)
         self._log_pdet = np.sum(np.log(self._w), axis=0).item()
         self._subspace_size = np.size(self._w)
         self._rank = self._subspace_size
@@ -1254,13 +1257,10 @@ class CovViaEigenFactorization(CovarianceMatrix):
         return np.dot(self._v, np.multiply(self._w, self._v.T))
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # shape (r, n)
-        return (
-            (self._v.T * (1.0 / np.sqrt(self._w))).T @ self._v.T
-        ) @ x  # x @ self._LP
+        return ((self._v.T * self._inv_sqrt_w).T @ self._v.T) @ x
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ (self._v.T * np.sqrt(self._w))
+        return x @ (self._v.T * self._sqrt_w)
 
     def _support_mask(self, x):
         """
@@ -1339,6 +1339,52 @@ class CovViaEigenFactorization(CovarianceMatrix):
         )
 
 
+def get_eigen_factorization_gram_matrix_trick(anomalies: NDArrayFloat) -> NDArrayFloat:
+    """
+    _summary_
+
+    Parameters
+    ----------
+    anomalies : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
+    ne, n_pts = np.shape(anomalies)
+    if ne < n_pts:
+        GramM = anomalies @ anomalies.T  # ne x ne matrix
+    else:
+        GramM = anomalies.T @ anomalies  # n_pts x n_pts matrix
+
+    # Computed eigen decomposition
+    # Could be randomized for large matrices
+    eigvals, U = sp.linalg.eigh(GramM)
+
+    # Sort
+    idx = eigvals.argsort()[::-1]
+    # Keep only positive values(truncate)
+    idx = idx[eigvals[idx] > 0.0]
+    # truncation
+    eigvals = eigvals[idx]
+    U = U[:, idx]
+
+    # Rebuild the Eigen decomposition of anomalies
+    s = np.sqrt(eigvals)
+
+    if ne < n_pts:
+        # U has shape (ne, n_pc)
+        # anomalies has shape (ne, n_pts)
+        V = ((U.T @ anomalies) / s[:, None]).T
+    else:
+        # U has shape (n_pts, p_pc)
+        V = U
+    # Vt has shape (n_pc, n_pts)
+    return V, s
+
+
 class CovViaEnsemble(CovarianceMatrix):
     r"""
     Represents a covariance matrix as an ensemble of realizations.
@@ -1380,7 +1426,7 @@ class CovViaEnsemble(CovarianceMatrix):
 
     """
 
-    __slots__ = ["_ensemble"]
+    __slots__ = ["_ensemble", "_v", "_w", "_sqrt_w", "_inv_sqrt_w", "_inv_w"]
 
     def __init__(
         self,
@@ -1396,7 +1442,6 @@ class CovViaEnsemble(CovarianceMatrix):
         """
         self.ensemble = ensemble
         super().__init__()
-        # TODO Add SVD of anomalies
 
     @property
     def ensemble(self) -> NDArrayFloat:
@@ -1405,6 +1450,15 @@ class CovViaEnsemble(CovarianceMatrix):
     @ensemble.setter
     def ensemble(self, value: NDArrayFloat) -> None:
         self._ensemble = value
+
+        # build preconditioner using Eigen decomposition
+        self._v, self._sqrt_w = get_eigen_factorization_gram_matrix_trick(
+            self.anomalies / np.sqrt((self.n_ens - 1))
+        )
+        self._w = self._sqrt_w**2
+        self._inv_w = 1.0 / self._w
+        self._inv_sqrt_w = 1.0 / (self._sqrt_w)
+
         self._subspace_size, self.n_pts = np.shape(self.ensemble)
         self._rank = 0
         self._log_pdet = 0.0
@@ -1436,18 +1490,11 @@ class CovViaEnsemble(CovarianceMatrix):
         )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO with SVD of anomaly matrix
-        raise NotImplementedError(
-            "`whitening` is not implemented for an ensemble matrix yet!\n"
-            "Please be patient!"
-        )
+        # shape (r, n)
+        return ((self._v.T * self._inv_sqrt_w).T @ self._v.T) @ x
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # TODO with SVD of anomaly matrix
-        raise NotImplementedError(
-            "`colorize` is not implemented for an ensemble matrix yet!\n"
-            "Please be patient!"
-        )
+        return x @ (self._v.T * self._sqrt_w)
 
     def _todense(self) -> NDArrayFloat:
         """
@@ -1455,33 +1502,21 @@ class CovViaEnsemble(CovarianceMatrix):
         """
         return self.anomalies.T @ self.anomalies / (self.n_ens - 1)
 
-    def solve(
-        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
-    ) -> NDArrayFloat:
+    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """
         Solve A^{T}Ax = b, with A, the anomalies matrix instance.
 
         Note that the dense covariance matrix is never built.
+
+        TODO: explains that it relies on the eigen decomposition.
         """
-        residual = CallBack()
-        # make sure to have 2d array
-        _b = np.reshape(b, (self.n_pts, -1))
-        nv = np.shape(_b)[1]
-        x = np.zeros_like(_b)
-        # does not work for matrices ?
-        for i in range(nv):
-            x[:, i], info = gmres(
-                self,
-                b=_b[:, i],
-                rtol=rtol,
-                maxiter=maxiter,
-                callback=residual,
-                callback_type="legacy",
-                atol=0.0,
-            )
-            self.solvmatvecs += residual.itercount
-        # Get the original shape back
-        return x.reshape(np.shape(b))
+        return np.linalg.multi_dot(
+            [
+                (self._v * self._inv_w[None, :]),
+                self._v.T,
+                b,
+            ]
+        )
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
