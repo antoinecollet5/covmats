@@ -234,6 +234,13 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         return A
 
     @staticmethod
+    def _validate_dense_lower_triangle(A: ArrayLike, name: str) -> NDArrayFloat:
+        if not np.allclose(A, np.tril(A)):
+            message = f"The input `{name}` must be a lower-triangular matrix."
+            raise ValueError(message)
+        return A
+
+    @staticmethod
     def _validate_vector(A, name):
         A = np.atleast_1d(A)
         if A.ndim != 1 or not (
@@ -726,8 +733,9 @@ class CovViaCholesky(CovarianceMatrix):
     @L.setter
     def L(self, L: NDArrayFloat) -> None:
         """Set the lower triangle of the covariance matrix Cholesky factorization."""
-        # TODO: validate lower triangle
-        self._L = self._validate_matrix(L, "L")
+        self._L = self._validate_dense_lower_triangle(
+            self._validate_matrix(L, "L"), "L"
+        )
         self._log_pdet = 2 * np.log(np.diag(self._L)).sum(axis=-1)
         self.n_pts = np.shape(self.L)[0]
         self._subspace_size = self.n_pts
@@ -967,8 +975,9 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
     @L.setter
     def L(self, L: NDArrayFloat) -> None:
         """Set the lower triangle of the precision matrix Cholesky factorization."""
-        # TODO: validate lower triangle
-        self._L = self._validate_matrix(L, "L")
+        self._L = self._validate_dense_lower_triangle(
+            self._validate_matrix(L, "L"), "L"
+        )
         self._log_pdet = -2 * np.log(np.diag(self.L)).sum(axis=-1)
         self.n_pts = np.shape(self.L)[0]
         self._subspace_size = self.n_pts

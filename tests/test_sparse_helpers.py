@@ -36,6 +36,13 @@ def test_SparseCholeskyFactor_construtor() -> None:
         L[0, 0] = 3.0  # no unit diagonal
         SparseCholeskyFactor(L, D, P)
 
+    with pytest.raises(
+        ValueError,
+        match=("The input `L` must be a lower-triangular sparse array."),
+    ):
+        L = L @ L.T  # not a lower triangle
+        SparseCholeskyFactor(L, D, P)
+
 
 def test_SparseCholeskyFactor() -> None:
 

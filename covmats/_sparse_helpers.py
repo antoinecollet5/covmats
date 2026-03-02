@@ -57,19 +57,27 @@ class SparseCholeskyFactor:
                 f" and ({self.n},) respectively."
             )
 
+    @staticmethod
+    def _validate_lower_triangle(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
+        try:
+            assert_allclose_sparse(A, sp.sparse.tril(A))
+        except AssertionError as e:
+            message = f"The input `{name}` must be a lower-triangular sparse array."
+            raise ValueError(message) from e
+        return A
+
     @property
     def L(self) -> sp.sparse.csc_array:
         return self._L
 
     @L.setter
     def L(self, L: sp.sparse.csc_array) -> None:
+        self._L = self._validate_lower_triangle(L, "L")
         # Extract the diagonal
         try:
             np.testing.assert_allclose(L.diagonal(), np.ones(L.shape[0]))
         except AssertionError as e:
             raise ValueError("The diagonal elements of `L` are assumed to be 1!") from e
-
-        self._L = L
 
     @property
     def D(self) -> sp.sparse.csc_array:
@@ -229,7 +237,9 @@ class SparseCholeskyFactor:
         return self.sqrtD @ (self.L.T @ self.apply_P(x.T)).T
 
 
-def assert_allclose_sparse(A, B, atol=1e-8, rtol=1e-8) -> None:
+def assert_allclose_sparse(
+    A: sp.sparse.sparray, B: sp.sparse.sparray, atol: float = 1e-8, rtol: float = 1e-8
+) -> None:
     """Assert that two sparse matrices or arrays are almost equal."""
     # If you want to check matrix shapes as well
     assert np.array_equal(A.shape, B.shape)

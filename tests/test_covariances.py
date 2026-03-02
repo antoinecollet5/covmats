@@ -124,6 +124,19 @@ def test_validate_vector():
     covmats.CovarianceMatrix._validate_vector(np.ones(((2,))), "my_arg")
 
 
+def test_validate_dense_lower_triangle():
+    with pytest.raises(
+        ValueError,
+        match=("The input `D` must be a lower-triangular matrix."),
+    ):
+        covmats.CovarianceMatrix._validate_dense_lower_triangle(np.ones((2, 2)), "D")
+
+    # No issue
+    covmats.CovarianceMatrix._validate_dense_lower_triangle(
+        np.array([[1.0, 0.0], [1.0, 1.0]]), "D"
+    )
+
+
 def test_CovViaDiagonal_stats1() -> None:
 
     d = [1, 2, 3]
