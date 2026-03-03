@@ -1182,14 +1182,7 @@ class CovViaEigenFactorization(CovarianceMatrix):
 
     """
 
-    __slots__: List[str] = [
-        "_LP",
-        "_LA",
-        "_w",
-        "_v",
-        "_null_basis",
-        "_eps",
-    ]
+    __slots__: List[str] = ["_w", "_v", "_inv_w", "_sqrt_w", "_inv_sqrt_w"]
 
     def __init__(self, eigenfactorization: Tuple[NDArrayFloat, NDArrayFloat]) -> None:
         """
@@ -1459,7 +1452,8 @@ class CovViaEnsemble(CovarianceMatrix):
         self._inv_w = 1.0 / self._w
         self._inv_sqrt_w = 1.0 / (self._sqrt_w)
 
-        self._subspace_size, self.n_pts = np.shape(self.ensemble)
+        self.n_pts = np.shape(self.ensemble)[1]
+        self._subspace_size = np.shape(self._v)[1]
         self._rank = 0
         self._log_pdet = 0.0
 
@@ -1476,13 +1470,6 @@ class CovViaEnsemble(CovarianceMatrix):
         """Return the number of members in the ensemble."""
         return self.ensemble.shape[0]
 
-    @property
-    def subspace_size(self) -> int:
-        """
-        Subspace size of the covariance matrix.
-        """
-        return self.n_ens
-
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x (dot product)."""
         return np.linalg.multi_dot([self.anomalies.T, self.anomalies, x]) / (
@@ -1490,16 +1477,16 @@ class CovViaEnsemble(CovarianceMatrix):
         )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # shape (r, n)
-        return ((self._v.T * self._inv_sqrt_w).T @ self._v.T) @ x
+        return x @ (self._v * self._inv_sqrt_w[None, :])
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ (self._v.T * self._sqrt_w)
+        return x @ (self._sqrt_w[None, :].T * self._v.T)
 
     def _todense(self) -> NDArrayFloat:
         """
         Return a dense representation of the matrix.
         """
+        # works also with np.linalg.multi_dot([(Ce._v * (Ce._w[None, :])), Ce._v.T])
         return self.anomalies.T @ self.anomalies / (self.n_ens - 1)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
