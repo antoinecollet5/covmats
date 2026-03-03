@@ -3,12 +3,11 @@
 
 """Wrap the sparse cholesky factorization from"""
 
-from typing import Optional, Tuple, TypeVar, Union, overload
+from typing import Tuple, TypeVar, overload
 
 import numpy as np
 import scipy as sp
 
-from covmats._helpers import check_random_state
 from covmats._types import ArrayLike, NDArrayFloat, NDArrayInt
 
 # Define a type variable for the input/output type
@@ -248,50 +247,6 @@ def assert_allclose_sparse(
     np.testing.assert_equal(r1, r2)
     np.testing.assert_equal(c1, c2)
     np.testing.assert_allclose(v1, v2, atol=atol, rtol=rtol)
-
-
-def sample_from_sparse_cov_factor(
-    mean: NDArrayFloat,
-    factor: sp.sparse.csc_array,
-    n_samples: int = 100,
-    random_state: Optional[
-        Union[int, np.random.Generator, np.random.RandomState]
-    ] = None,
-) -> NDArrayFloat:
-    r"""
-    Sample from the given sparse factor of the covariance matrix and the given mean.
-
-    Parameters
-    ----------
-    mean: NDArrayFloat
-        Mean of the field with shape $N_{\mathrm{s}}$.
-    factor: NDArrayFloat
-        Sparse factor of the covariance matrix from which to sample from. It has shape
-        $(N_{\mathrm{s}} \times N_{\mathrm{s}})$.
-    n_samples: int
-        The number of samples required ($N_{\mathrm{e}}$). By default 100.
-    random_state : Optional[Union[int, np.random.Generator, np.random.RandomState]]
-        Pseudorandom number generator state used to generate resamples.
-        If `random_state` is ``None`` (or `np.random`), the
-        `numpy.random.RandomState` singleton is used.
-        If `random_state` is an int, a new ``RandomState`` instance is used,
-        seeded with `random_state`.
-        If `random_state` is already a ``Generator`` or ``RandomState``
-        instance then that instance is used. The default is None
-
-    Returns
-    -------
-    NDArrayFloat
-        The ensemble of realizations with shape
-        $(N_{\mathrm{s}} \times N_{\mathrm{e}})$
-    """
-    if random_state is not None:
-        _random_state = check_random_state(random_state)
-    else:
-        _random_state = np.random.default_rng()
-    return factor @ _random_state.normal(
-        scale=1.0, size=(factor.shape[0], n_samples)
-    ) + mean.reshape(-1, 1)
 
 
 def get_SPD_sparse_n11_example(seed: int) -> sp.sparse.csc_array:

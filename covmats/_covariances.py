@@ -1596,7 +1596,7 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         """Return the number of points covered."""
         return np.shape(self._pts)[0]
 
-    def _todense(self) -> NDArrayFloat:
+    def todense(self) -> NDArrayFloat:
         """
         Explicit dense representation of the covariance matrix.
         """
@@ -1679,7 +1679,9 @@ def _build_kernel_preconditioner(
     if nb_pts <= 0:
         raise ValueError("The number of points cannot be null !")
     if nb_pts < k:
-        raise ValueError("k must be superior to the number of points !")
+        raise ValueError(
+            f"k ({k}) must be lower or equal to the number of points ({nb_pts})!"
+        )
 
     # Build the tree
     start: float = time()

@@ -80,7 +80,6 @@ To work with covariance matrices and low rank approximations.
 .. autosummary::
    :toctree: _autosummary
 
-    sample_from_sparse_cov_factor
     get_explained_var
 
 Test data
@@ -127,7 +126,6 @@ from covmats._sparse_helpers import (
     SparseCholeskyFactor,
     get_SPD_sparse_example,
     get_SPD_sparse_n11_example,
-    sample_from_sparse_cov_factor,
 )
 from covmats.data import load_precision_example_4225x
 
@@ -153,7 +151,6 @@ __all__ = [
     "get_explained_var",
     "get_linop_eigen_factorization",
     "eigen_factorize_cov_mat",
-    "sample_from_sparse_cov_factor",
     "__version__",
     "__email__",
     "__author__",

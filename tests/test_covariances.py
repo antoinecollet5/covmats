@@ -6,9 +6,14 @@ import covmats
 import numpy as np
 import pytest
 import scipy as sp
-from covmats._covariances import CallBack
+from covmats._covariances import (
+    CallBack,
+    _build_kernel_preconditioner,
+    get_pts_coords_regular_grid,
+)
 from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
+from covmats.data import load_precision_example_4225x
 
 from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
 
@@ -467,46 +472,38 @@ def test_CovViaSparsePrecisionCholesky() -> None:
     np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
 
 
-def test_CovViaEnsemble() -> None:
+def test_build_kernel_preconditioner() -> None:
 
-    rng = np.random.default_rng(2026)
-    n = 5
-    A = rng.random(size=(n, n))
-    A = A @ A.T  # make the covariance symmetric positive definite
+    _number_grid_cells = 225
+    prior_std = 2.0
 
-    L = np.linalg.cholesky(A)
-    cov_cho = covmats.CovViaCholesky(L)
+    # Exponential covariance model
+    def exponential_kernel(r: float) -> NDArrayFloat:
+        return (prior_std**2) * np.exp(-r)
 
-    # Test colorize with an ensemble
-    colored_samples = cov_cho.sample_mvnormal(
-        shape=(5000,), random_state=np.random.default_rng(2027)
+    param_shape = np.array(
+        [np.sqrt(_number_grid_cells), np.sqrt(_number_grid_cells)], dtype=np.int8
     )
-    cov_ens = covmats.CovViaEnsemble(colored_samples)
+    # _params = {"R": 1.0e-4, "kappa": 100}
+    dx = 1.0 / 50.0
+    dy = 1.0 / 50.0
+    mesh_dim = (dx, dy)
 
-    # Check to dense
-    np.testing.assert_allclose(cov_ens.todense(), A, rtol=0.02)
+    pts = get_pts_coords_regular_grid(mesh_dim, param_shape)
 
-    expected = np.array([20.926541, 33.896138, 43.155498, 25.852243, 22.575929])
+    # No issue
+    _build_kernel_preconditioner(pts, exponential_kernel, k=100)
 
-    # matvec and rmatvec
-    np.testing.assert_allclose(cov_ens @ v5, expected, rtol=1e-6)
-    np.testing.assert_allclose(cov_ens @ v5, cov_ens.T @ v5)
-
-    # matmat
-    np.testing.assert_allclose(cov_ens @ V54, np.vstack([expected] * 4).T, rtol=1e-6)
-
-    # rmatmat
-    np.testing.assert_allclose(cov_ens @ V54, cov_ens.T @ V54)
-
-    # solve
-    np.testing.assert_allclose(cov_ens.solve(cov_ens @ v5), v5, atol=1e-10)
-    np.testing.assert_allclose(cov_ens.solve(cov_ens @ V54), V54, atol=1e-10)
-
-    # Get precision matrix (inverse)
-    # TODO: not implemented yet => need to use SVD to perform that
-    np.testing.assert_allclose(np.linalg.inv(A), cov_ens.precision, rtol=0.05)
-
-    # TODO: test sampling
+    # Issue
+    with pytest.raises(ValueError, match="The number of points cannot be null !"):
+        _build_kernel_preconditioner(np.array([]), exponential_kernel, k=100)
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "k (1000) must be lower or equal to the number of points (225)!"
+        ),
+    ):
+        _build_kernel_preconditioner(np.array(pts), exponential_kernel, k=1000)
 
 
 def test_fft_covariance_matrix() -> None:
@@ -544,8 +541,15 @@ def test_fft_covariance_matrix() -> None:
     cov.reset_comptors()
     assert cov.itercount() == 0
 
+    # Dense version
+    np.testing.assert_allclose(cov @ np.eye(cov.n_pts), cov.todense(), rtol=1e-3)
 
-def test_eigen_decompose_and_associated_functions() -> None:
+    # Test to matvec and solve
+    np.testing.assert_allclose(cov.solve(cov @ np.ones(225)), np.ones(225))
+
+
+@pytest.mark.parametrize("is_use_preconditioner,", ((True), (False)))
+def test_eigen_decompose_and_associated_functions(is_use_preconditioner: bool) -> None:
     _number_grid_cells = 225
     prior_std = 2.0
 
@@ -568,7 +572,7 @@ def test_eigen_decompose_and_associated_functions() -> None:
         domain_shape=param_shape,
         len_scale=len_scale,
         nugget=1e-4,
-        is_use_preconditioner=True,
+        is_use_preconditioner=is_use_preconditioner,
     )
 
     eig_mat = covmats.eigen_factorize_cov_mat(cov_mat_fft, n_pc=100, random_state=25652)
@@ -589,17 +593,25 @@ def test_eigen_decompose_and_associated_functions() -> None:
     # The trace should be around 900 (225 * 2.0 ** 2)
     np.testing.assert_allclose(eig_mat.get_trace(), 900, rtol=0.05)
 
-    samples = covmats.sample_from_sparse_cov_factor(
-        np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 20
+    samples = eig_mat.sample_mvnormal(shape=(20,), random_state=2026)
+    assert samples.shape == (20, 225)
+    samples = eig_mat.sample_mvnormal(
+        shape=(
+            10,
+            7,
+            99,
+        ),
+        random_state=2026,
     )
-    assert samples.shape == (225, 20)
-    samples = covmats.sample_from_sparse_cov_factor(
-        np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 10, random_state=2012
-    )
-    assert samples.shape == (225, 10)
+    assert samples.shape == (10, 7, 99, 225)
     assert eig_mat.todense().shape == (225, 225)
 
+    # Test to dense
+    np.testing.assert_allclose(cov_mat_fft.todense(), eig_mat.todense(), rtol=1e-2)
+    # Test trace and diagonal
     _trace = eig_mat.get_trace()
+    np.testing.assert_allclose(_trace, np.sum(cov_mat_fft.get_diagonal()), rtol=1e-2)
+
     # both covariance matrice instance and trace
     covmats.get_explained_var(eig_mat.eig_vals, eig_mat, _trace)
     # no trace
@@ -611,6 +623,14 @@ def test_eigen_decompose_and_associated_functions() -> None:
         ValueError, match="You must provide a Covariance matrix instance or the trace !"
     ):
         covmats.get_explained_var(eig_mat.eig_vals)
+
+    # Test linop capability
+    # TODO
+    # test_v = np.ones(225)
+    # np.testing.assert_allclose(eig_mat.solve(eig_mat @ test_v), test_v)
+
+    # test_V = np.ones((225, 89))
+    # np.testing.assert_allclose(eig_mat.solve(eig_mat @ test_V), test_V)
 
 
 def test_negative_eigen_values() -> None:
@@ -627,53 +647,111 @@ def test_negative_eigen_values() -> None:
     assert cov_mat_eigen.eig_vects.size == 8
 
 
-# def test_sparse_precision_matrix() -> None:
-#     nx = (
-#         10  # number of voxels along the x axis + 4 * 2 for the borders
-# (regularization)
-#     )
-#     ny = 10  # number of voxels along the y axis
-#     nz = 1
-#     dx = 5.0  # voxel dimension along the x axis
-#     dy = 5.0  # voxel dimension along the y axis
-#     dz = 1.0
+def test_CovViaEnsemble_0() -> None:
 
-#     len_scale = 20.0  # m
-#     kappa = 1 / len_scale
-#     alpha = 1.0
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T  # make the covariance symmetric positive definite
 
-#     mean = 300.0  # trend of the field
-#     std = 150.0  # standard deviation of the field
+    L = np.linalg.cholesky(A)
+    cov_cho = covmats.CovViaCholesky(L)
 
-#     # Create a presison matrix
-#     Q_ref = spde.get_precision_matrix(
-#         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
-#     )
-#     cholQ_ref = sparse_cholesky(Q_ref)
+    # Test colorize with an ensemble
+    colored_samples = cov_cho.sample_mvnormal(
+        shape=(5000,), random_state=np.random.default_rng(2027)
+    )
+    cov_ens = covmats.CovViaEnsemble(colored_samples)
 
-#     n_fields = 50
-#     # 200 non conditional simulations
-#     tmp = []
-#     for i in range(n_fields):
-#         _field = np.abs(
-#             spde.simu_nc(cholQ_ref, random_state=i).reshape(nx, ny, order="F") + mean
-#         )
+    # Check to dense
+    np.testing.assert_allclose(cov_ens.todense(), A, rtol=0.02)
 
-#         tmp.append(np.where(_field < 0.0, 0.0, _field).ravel("F"))
-#     X = np.array(tmp).T
+    expected = np.array([20.926541, 33.896138, 43.155498, 25.852243, 22.575929])
 
-#     assert X.shape == (nx * ny, n_fields)
+    # matvec and rmatvec
+    np.testing.assert_allclose(cov_ens @ v5, expected, rtol=1e-6)
+    np.testing.assert_allclose(cov_ens @ v5, cov_ens.T @ v5)
 
-#     cov_mat = CovViaSparsePrecision(Q_ref, cholQ_ref)
-#     assert (cov_mat @ np.ones(nx * ny)).size == nx * ny
-#     assert cov_mat.get_diagonal().size == nx * ny
+    # matmat
+    np.testing.assert_allclose(cov_ens @ V54, np.vstack([expected] * 4).T, rtol=1e-6)
+
+    # rmatmat
+    np.testing.assert_allclose(cov_ens @ V54, cov_ens.T @ V54)
+
+    # solve
+    np.testing.assert_allclose(cov_ens.solve(cov_ens @ v5), v5, atol=1e-10)
+    np.testing.assert_allclose(cov_ens.solve(cov_ens @ V54), V54, atol=1e-10)
+
+    # Get precision matrix (inverse)
+    np.testing.assert_allclose(np.linalg.inv(A), cov_ens.precision, rtol=0.05)
 
 
-# def test_dense_covariance_matrix() -> None:
-#     cov = CovViaDense(np.arange(1, 10).reshape(3, 3).astype(np.float64))
-#     np.testing.assert_array_equal(
-#         cov @ np.ones(3, dtype=np.float64), np.array([6.0, 15.0, 24.0])
-#     )
-#     np.testing.assert_array_equal(cov.T @ np.ones(3), np.array([12.0, 15.0, 18.0]))
-#     np.testing.assert_array_equal(cov.get_diagonal(), np.array([1.0, 5.0, 9.0]))
-#     assert cov.get_trace() == 15.0
+def test_CovViaEnsemble_1() -> None:
+
+    # 4225 x 4225 sparse precision matrix
+    Q = load_precision_example_4225x()
+    # 4225 x 4225 dense covariance matrix
+    # C = np.linalg.inv(Q.toarray())
+
+    cov = covmats.CovViaSparsePrecisionCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+    )
+
+    # Sample from this covariance
+    ne = 1000
+    ensemble = cov.sample_mvnormal((ne,), random_state=np.random.default_rng(209))
+
+    # Create a new Cov instance using the ensemble
+    Ce = covmats.CovViaEnsemble(ensemble=ensemble)
+
+    # Make it dense
+    Ce.todense()
+    # np.testing.assert_allclose(Ce.todense(), C, rtol=0.5, atol=1.0)
+
+    # Invert it
+    np.testing.assert_allclose(Ce.precision, Q.toarray(), rtol=1e-2, atol=1e-1)
+
+    # Sample from this ensemble
+    samples = np.random.default_rng(2027).standard_normal(size=(ne, Ce.subspace_size))
+    np.testing.assert_allclose(
+        samples, Ce.whiten(Ce.colorize(samples)), rtol=1e-2, atol=1e-2
+    )
+
+    # Test linop capability
+    # TODO
+
+
+def test_CovViaEnsemble_2() -> None:
+    # precision matrix (sparse)
+    Q = get_SPD_sparse_n11_example(seed=2026)
+    # dense covariance matrix
+    C = np.linalg.inv(Q.toarray())
+    cvspc = covmats.CovViaSparsePrecisionCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+    )
+
+    # White noise sampling
+    samples = np.random.default_rng(2027).standard_normal(size=(50_000, 11))
+    # Sample from the covariance matrix
+    colored_samples = cvspc.colorize(samples)
+
+    # New representation from the ensemble
+    Ce = covmats.CovViaEnsemble(colored_samples)
+    # Test sampling using the new representation
+    colored_samples2 = Ce.colorize(samples)
+    np.testing.assert_allclose(samples, Ce.whiten(colored_samples2))
+
+    # Make a second covariance instancefrom the new ensemble
+    Ce2 = covmats.CovViaEnsemble(colored_samples2)
+
+    # Test the diagonal extraction
+    np.testing.assert_allclose(np.diag(C), Ce.get_diagonal(), rtol=0.05)
+
+    # Check consistency
+    np.testing.assert_allclose(C, Ce.todense(), atol=0.05)
+    np.testing.assert_allclose(C, Ce2.todense(), atol=0.1)
+    np.testing.assert_allclose(Q.toarray(), Ce.precision, atol=0.05)
+    np.testing.assert_allclose(Q.toarray(), Ce2.precision, atol=0.05)
+
+    # Test linop capability
+    # TODO
