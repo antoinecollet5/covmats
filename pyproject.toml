@@ -42,7 +42,10 @@ Changelog = "https://github.com/antoinecollet5/covmats/blob/master/CHANGELOG.rst
 
 [tool.setuptools]
 py-modules = []
-packages = ["covmats"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["covmats*"]
 
 [tool.setuptools.package-data]
 mypackage = ["data/*.mtx"]
