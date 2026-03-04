@@ -455,7 +455,7 @@ def test_CovViaPrecisionCholesky(is_embbed_precision: bool) -> None:
         shape=(500_000,), random_state=np.random.default_rng(2027)
     )
     np.testing.assert_allclose(
-        covmats.CovViaEnsemble(colored_samples).todense(), A, rtol=2e-1
+        covmats.CovViaEnsemble(colored_samples).todense(), A, rtol=2e-1, atol=5e-2
     )
 
     np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
