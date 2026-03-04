@@ -19,6 +19,10 @@ build:
 # Optionally set the version of Python and requirements required to build your docs
 python:
   install:
+    # To avoid issue with libsuitesparse-dev
+    - method: pip
+      packages:
+        - scikit-sparse<0.5.0
     # Install your package in editable mode with optional dev extras
     - method: pip
       path: "."
