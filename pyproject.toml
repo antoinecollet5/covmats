@@ -15,17 +15,16 @@ dependencies = [
     "wheel",
     "numpy>=1.2",
     "scipy>=1.6.2",
-    "packaging; python_version < '3.8'",
+    "packaging",
     "typing_extensions",
 ]
-requires-python = ">=3.7"
+
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -45,24 +44,16 @@ Changelog = "https://github.com/antoinecollet5/covmats/blob/master/CHANGELOG.rst
 py-modules = []
 packages = ["covmats"]
 
+[tool.setuptools.package-data]
+mypackage = ["data/*.mtx"]
+
 [tool.setuptools.dynamic]
 version = { attr = "covmats.__about__.__version__" }
 
-[tool.rye]
-dev-dependencies = [
-    "pytest>=8.2.2",
-    "py7zr",
-    "testpath",
-    "pre-commit",
-    "mypy",
-    "tox",
-    "coverage",
-]
-
 [project.optional-dependencies]
-all = ['covmats[numba, install, lint, tests, examples, docs]']
-numba = ["numba"]
+all = ['covmats[install, lint, tests, examples, docs]']
 docs = [
+    "covmats[examples]",
     "sphinx<9",
     "nbsphinx",
     "nbsphinx-link>=1.3.1",
@@ -80,9 +71,10 @@ tests = [
     "pytest-cookies",
     "coverage",
     "numdifftools",
+    "scikit-sparse"
 ]
-examples = ["matplotlib"]
-lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty ; python_version > '3.7'"]
+examples = ["matplotlib", "scikit-sparse"]
+lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
 install = ["pip", "wheel"]
 
 [tool.ruff]
@@ -95,7 +87,7 @@ lint.select = [
     # isort
     "I",
 ]
-src = ["src", "tests", "docs"]
+src = ["covmats", "tests", "docs"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 lint.fixable = ["A", "B", "C", "D", "E", "F", "I"]
@@ -135,3 +127,8 @@ lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 # Format style used to check logging format string. `old` means using %
 # formatting, `new` is for `{}` formatting,and `fstr` is for f-strings.
 logging-format-style = "fstr"
+
+[tool.ty.src]
+include = ["covmats", "tests"]
+# TODO: change that when tutorials are ready
+exclude = ["notebooks/"]

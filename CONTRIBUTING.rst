@@ -12,7 +12,7 @@ Types of Contributions
 ----------------------
 
 Reporting Bugs and Defects
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A defect is any variance between the actual and expected behavior. This includes bugs in the code, issues in the documentation, or problems with visualizations.
 
@@ -90,7 +90,7 @@ After approval, a maintainer will merge it.
 Thank you very much for your contribution and for helping improve covmats!
 
 Setting Up covmats for Local Development
----------------------------------------
+-----------------------------------------
 
 Ready to contribute? Here’s how to set up `covmats` for local development.
 

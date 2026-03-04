@@ -1,8 +1,12 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Antoine COLLET
+
 """Provide some helpers."""
 
 from typing import Sequence, Union
 
 import numpy as np
+from scipy._lib._util import check_random_state as check_random_state
 
 from covmats._types import NDArrayFloat, NDArrayInt
 
@@ -40,13 +44,10 @@ def get_pts_coords_regular_grid(
     return (
         np.array(
             np.meshgrid(
-                *[
-                    np.linspace(xmin[i], xmax[i], _shape[i])
-                    for i in range(_shape.size)  # type: ignore
-                ],
+                *[np.linspace(xmin[i], xmax[i], _shape[i]) for i in range(_shape.size)],
                 indexing="ij",
             )
         )
         .reshape(_shape.size, -1, order="F")
         .T
-    )  # type: ignore
+    )

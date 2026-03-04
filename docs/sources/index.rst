@@ -1,5 +1,5 @@
 Welcome to covmats's documentation!
-==================================
+===================================
 
 .. include:: readme.rst
 
