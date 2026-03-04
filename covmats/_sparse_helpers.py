@@ -14,7 +14,7 @@ from covmats._types import ArrayLike, NDArrayFloat, NDArrayInt
 T = TypeVar("T", NDArrayFloat, sp.sparse.csc_array)
 
 
-class SparseCholeskyFactor:
+class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     """Sparse cholesky factor of a matrix A.
 
     TODO.
@@ -165,6 +165,10 @@ class SparseCholeskyFactor:
                 unit_diagonal=True,
             )
         )
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        L = self.apply_Pt(self.L)
+        return L @ (self.D @ (L.T @ x))
 
     @property
     def log_pdet(self) -> float:

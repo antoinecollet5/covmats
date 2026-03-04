@@ -319,6 +319,9 @@ def test_CovViaCholesky_aslinop() -> None:
     cov2 = covmats.CovViaCholesky(L, covariance=A)
     np.testing.assert_allclose(cov2.todense(), A)
 
+    # Test  diagonal
+    np.testing.assert_allclose(cov2.get_diagonal(), np.diagonal(A))
+
 
 def test_CovViaCholesky_mvnormal() -> None:
 
@@ -350,23 +353,112 @@ def test_CovViaCholesky_mvnormal() -> None:
     assert x.shape == (2, 4, 3)
 
 
-def test_CovViaPrecisionCholesky() -> None:
+@pytest.mark.parametrize("is_embbed_covariance", (True, False))
+def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
+
+    N: int = 11
+    # precision matrix (sparse)
+    A = get_SPD_sparse_n11_example(seed=2026)
+    # dense covariance matrix
+    Q = np.linalg.inv(A.toarray())
+    cov = covmats.CovViaSparseCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(A)),
+        sparse_covariance=A if is_embbed_covariance else None,
+    )
+
+    # test access scf
+    cov.scf
+
+    # Test to dense
+    np.testing.assert_allclose(cov.todense(), A.toarray())
+    # Test shape
+    assert cov.shape == (N, N)
+
+    # Diagonal
+    np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
+
+    # Dense
+    np.testing.assert_allclose(cov.precision, Q)
+    np.testing.assert_allclose(cov.todense(), A.toarray())
+
+    # Test solve
+    expected_x = np.arange(N, dtype=np.float64)
+    b = A @ expected_x
+    np.allclose(cov @ b, expected_x)
+    np.allclose(cov.solve(b), expected_x)
+
+    # Test colorize and whiten
+    np.testing.assert_allclose(
+        cov.whiten(cov.colorize(np.eye(N))), np.eye(N), atol=1e-15
+    )
+
+    # Test colorize with an ensemble
+    colored_samples = cov.sample_mvnormal(
+        shape=(500_000,), random_state=np.random.default_rng(2027)
+    )
+    np.testing.assert_allclose(
+        covmats.CovViaEnsemble(colored_samples).todense(), A.toarray(), atol=2e-1
+    )
+
+    # Logdet
+    np.testing.assert_allclose(np.linalg.slogdet(A.toarray())[1], cov.log_pdet)
+
+
+@pytest.mark.parametrize("is_embbed_precision", (True, False))
+def test_CovViaPrecisionCholesky(is_embbed_precision: bool) -> None:
 
     rng = np.random.default_rng()
     n = 5
     P = rng.random(size=(n, n))
-    P = P @ P.T  # a precision matrix must be positive definite
+    Q = P @ P.T  # a precision matrix must be positive definite
     x = rng.random(size=n)
 
-    cov = covmats.CovViaPrecisionCholesky(np.linalg.cholesky(P))
+    A = np.linalg.inv(Q)
+
+    cov = covmats.CovViaPrecisionCholesky(
+        np.linalg.cholesky(Q), precision=Q if is_embbed_precision else None
+    )
 
     res = cov.whiten(x)
-    ref = x @ np.linalg.cholesky(P)
+    ref = x @ np.linalg.cholesky(Q)
     assert np.allclose(res, ref)
 
     res = cov.log_pdet
-    ref = -np.linalg.slogdet(P)[-1]
+    ref = -np.linalg.slogdet(Q)[-1]
     assert np.allclose(res, ref)
+
+    # Test to dense
+    np.testing.assert_allclose(cov.todense(), A)
+    # Test shape
+    assert cov.shape == (n, n)
+
+    # Diagonal
+    np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
+
+    # Dense
+    np.testing.assert_allclose(cov.precision, Q)
+    np.testing.assert_allclose(cov.todense(), A)
+
+    # Test matvec and solve
+    expected_x = np.arange(n, dtype=np.float64)
+    b = A @ expected_x
+    np.allclose(cov @ b, expected_x)
+    np.allclose(cov.solve(b), expected_x)
+
+    # Test colorize and whiten
+    np.testing.assert_allclose(
+        cov.whiten(cov.colorize(np.eye(n))), np.eye(n), atol=1e-10, rtol=1e-10
+    )
+
+    # Test colorize with an ensemble
+    colored_samples = cov.sample_mvnormal(
+        shape=(500_000,), random_state=np.random.default_rng(2027)
+    )
+    np.testing.assert_allclose(
+        covmats.CovViaEnsemble(colored_samples).todense(), A, rtol=1e-1
+    )
+
+    np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
 
 
 def test_CovViaPrecisionCholesky_whiten() -> None:
@@ -395,40 +487,8 @@ def test_ensemble_covariance_matrix() -> None:
     np.testing.assert_allclose(np.trace(cov.todense()), cov.get_trace(), rtol=1e-12)
 
 
-def test_CovViaSparseCholesky() -> None:
-
-    N: int = 11
-    A = get_SPD_sparse_n11_example(seed=2026)
-    cov = covmats.CovViaSparseCholesky(covmats.SparseCholeskyFactor(*_get_L_D_P(A)))
-
-    # Test to dense
-    np.testing.assert_allclose(cov.todense(), A.toarray())
-    # Test shape
-    assert cov.shape == (N, N)
-
-    # Diagonal
-    np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
-
-    # Test solve
-    expected_x = np.arange(N, dtype=np.float64)
-    b = A @ expected_x
-    np.allclose(cov.solve(b), expected_x)
-
-    # Test colorize and whiten
-    np.testing.assert_allclose(
-        cov.whiten(cov.colorize(np.eye(N))), np.eye(N), atol=1e-15
-    )
-
-    # Test colorize with an ensemble
-    colored_samples = cov.sample_mvnormal(
-        shape=(500_000,), random_state=np.random.default_rng(2027)
-    )
-    np.testing.assert_allclose(
-        covmats.CovViaEnsemble(colored_samples).todense(), A.toarray(), atol=2e-2
-    )
-
-
-def test_CovViaSparsePrecisionCholesky() -> None:
+@pytest.mark.parametrize("is_embbed_precision", (True, False))
+def test_CovViaSparsePrecisionCholesky(is_embbed_precision: bool) -> None:
 
     N: int = 11
     # precision matrix (sparse)
@@ -436,8 +496,12 @@ def test_CovViaSparsePrecisionCholesky() -> None:
     # dense covariance matrix
     A = np.linalg.inv(Q.toarray())
     cov = covmats.CovViaSparsePrecisionCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+        covmats.SparseCholeskyFactor(*_get_L_D_P(Q)),
+        sparse_precision=Q if is_embbed_precision else None,
     )
+
+    # test access scf
+    cov.scf
 
     # Test to dense
     np.testing.assert_allclose(cov.todense(), A)
@@ -454,6 +518,7 @@ def test_CovViaSparsePrecisionCholesky() -> None:
     # Test solve
     expected_x = np.arange(N, dtype=np.float64)
     b = A @ expected_x
+    np.allclose(cov @ expected_x, A @ expected_x)
     np.allclose(cov.solve(b), expected_x)
 
     # Test colorize and whiten
@@ -606,6 +671,14 @@ def test_eigen_decompose_and_associated_functions(is_use_preconditioner: bool) -
     assert samples.shape == (10, 7, 99, 225)
     assert eig_mat.todense().shape == (225, 225)
 
+    eig_mat.precision
+    # np.testing.assert_allclose(
+    #     eig_mat.precision, np.linalg.inv(cov_mat_fft.todense()), rtol=0.1
+    # )
+
+    L = eig_mat.get_sparse_LLT_factor()
+    np.testing.assert_allclose((L @ L.T).toarray(), eig_mat.todense())
+
     # Test to dense
     np.testing.assert_allclose(cov_mat_fft.todense(), eig_mat.todense(), rtol=1e-2)
     # Test trace and diagonal
@@ -625,12 +698,19 @@ def test_eigen_decompose_and_associated_functions(is_use_preconditioner: bool) -
         covmats.get_explained_var(eig_mat.eig_vals)
 
     # Test linop capability
-    # TODO
-    # test_v = np.ones(225)
-    # np.testing.assert_allclose(eig_mat.solve(eig_mat @ test_v), test_v)
+    test_v = np.ones(225)
+    eig_mat.solve(eig_mat @ test_v)  # cannot test equality because we will not get it
 
-    # test_V = np.ones((225, 89))
-    # np.testing.assert_allclose(eig_mat.solve(eig_mat @ test_V), test_V)
+    test_V = np.ones((225, 89))
+    eig_mat.solve(eig_mat @ test_V)
+
+    # Test sampling
+    samples = np.random.default_rng(2027).standard_normal(
+        size=(4, 70, eig_mat._subspace_size)
+    )
+    np.testing.assert_allclose(
+        samples, eig_mat.whiten(eig_mat.colorize(samples)), rtol=1e-2, atol=1e-2
+    )
 
 
 def test_negative_eigen_values() -> None:

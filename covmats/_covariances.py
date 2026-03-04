@@ -133,6 +133,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
 
+    @abstractmethod
     def get_diagonal(self) -> NDArrayFloat:
         """
         Return the diagonal entries of the matrix (variances).
@@ -140,14 +141,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        # Otherwise extract it using matrix vector products
-        approx_diag = np.zeros(self.n_pts)
-        for i in range(self.n_pts):
-            # construct the ith row of the identity matrix
-            v = np.zeros(self.n_pts)
-            v[i] = 1.0
-            approx_diag[i] = self.matvec(v)[i]
-        return approx_diag
+        ...
 
     def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
@@ -625,12 +619,6 @@ class CovViaDiagonal(CovarianceMatrix):
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return _dot_diag(x, self._sqrtD)
 
-    def _support_mask(self, x):
-        """
-        Check whether x lies in the support of the distribution.
-        """
-        return ~np.any(_dot_diag(x, self._i_zero), axis=-1)
-
     def _todense(self) -> NDArrayFloat:
         return np.apply_along_axis(np.diag, -1, self.D)
 
@@ -771,6 +759,10 @@ class CovViaCholesky(CovarianceMatrix):
         """Solve Ax = b, with A, the current covariance matrix instance."""
         return sp.linalg.cho_solve((self.L, True), b)
 
+    def get_diagonal(self) -> NDArrayFloat:
+        """Return the diagonal entries of the matrix (variances)."""
+        return np.sum((self.L**2), axis=1)
+
 
 class CovViaSparseCholesky(CovarianceMatrix):
     r"""
@@ -861,28 +853,30 @@ class CovViaSparseCholesky(CovarianceMatrix):
         self._rank = self._n_pts
 
     def _todense(self):
-        return self._scf.todense()
+        return self.scf.todense()
 
     @property
     def precision(self) -> NDArrayFloat:
         """
         Explicit dense representation of the precision matrix.
         """
-        return self._scf.inv()
+        return self.scf.inv()
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._scf(x)
+        if self._sparse_covariance is not None:
+            return self._sparse_covariance @ x
+        return self.scf @ x
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.whiten(x)
+        return self.scf.whiten(x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.colorize(x)
+        return self.scf.colorize(x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        return self._scf.solve(b)
+        return self.scf.solve(b)
 
     def get_diagonal(self) -> NDArrayFloat:
         """
@@ -890,7 +884,7 @@ class CovViaSparseCholesky(CovarianceMatrix):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return self._scf.get_diagonal()
+        return self.scf.get_diagonal()
 
 
 class CovViaPrecisionCholesky(CovarianceMatrix):
@@ -1018,6 +1012,18 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
             return self._precision @ b
         return self.L @ (self.L.T) @ b
 
+    def get_diagonal(self) -> NDArrayFloat:
+        """Return the diagonal entries of the matrix (variances)."""
+        # Otherwise extract it using matrix vector products
+        approx_diag = np.zeros(self.n_pts)
+        # TODO: multiprocessing to speed up things ? Or by chunks of 1000 ?
+        for i in range(self.n_pts):
+            # construct the ith row of the identity matrix
+            v = np.zeros(self.n_pts)
+            v[i] = 1.0
+            approx_diag[i] = self.matvec(v)[i]
+        return approx_diag
+
 
 class CovViaSparsePrecisionCholesky(CovarianceMatrix):
     """
@@ -1087,19 +1093,19 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self._scf.solve(x)
+        return self.scf.solve(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.whiten_inv(x)
+        return self.scf.whiten_inv(x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self._scf.colorize_inv(x)
+        return self.scf.colorize_inv(x)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return x = A^{-1} b."""
         if self._sparse_precision is not None:
             return self._sparse_precision.dot(b)
-        return self._scf.mat @ b
+        return self.scf.mat @ b
 
     def get_diagonal(self) -> NDArrayFloat:
         """
@@ -1107,16 +1113,16 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         The matrix is never built explicitly. Instead the matvec interface is
         used to multiply all column of the identity matrix.
         """
-        return self._scf.get_invdiagonal()
+        return self.scf.get_invdiagonal()
 
     def _todense(self):
-        return self._scf.inv()
+        return self.scf.inv()
 
     @property
     def precision(self) -> sp.sparse.sparray:
         if self._sparse_precision is not None:
             return self._sparse_precision
-        return self._scf.mat
+        return self.scf.mat
 
 
 class CovViaEigenFactorization(CovarianceMatrix):
@@ -1250,22 +1256,10 @@ class CovViaEigenFactorization(CovarianceMatrix):
         return np.dot(self._v, np.multiply(self._w, self._v.T))
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        return ((self._v.T * self._inv_sqrt_w).T @ self._v.T) @ x
+        return x @ (self._inv_sqrt_w * self._v.T).T
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        return x @ (self._v.T * self._sqrt_w)
-
-    def _support_mask(self, x):
-        """
-        Check whether x lies in the support of the distribution.
-        """
-        # TODO: this is not correct either
-        raise NotImplementedError(
-            "_support_mask is not implemented for EigenFactorization"
-        )
-        residual = np.linalg.norm(x @ self._null_basis, axis=-1)
-        in_support = residual < self._eps
-        return in_support
+        return x @ (self._sqrt_w * self._v.T)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -1358,11 +1352,15 @@ def get_eigen_factorization_gram_matrix_trick(anomalies: NDArrayFloat) -> NDArra
 
     # Sort
     idx = eigvals.argsort()[::-1]
-    # Keep only positive values(truncate)
-    idx = idx[eigvals[idx] > 0.0]
-    # truncation
     eigvals = eigvals[idx]
     U = U[:, idx]
+
+    # Keep only positive values(truncate)
+    tol = np.max(eigvals) * max(GramM.shape) * np.finfo(eigvals.dtype).eps
+    mask = eigvals > tol
+
+    eigvals = eigvals[mask]
+    U = U[:, mask]
 
     # Rebuild the Eigen decomposition of anomalies
     s = np.sqrt(eigvals)
@@ -1370,7 +1368,7 @@ def get_eigen_factorization_gram_matrix_trick(anomalies: NDArrayFloat) -> NDArra
     if ne < n_pts:
         # U has shape (ne, n_pc)
         # anomalies has shape (ne, n_pts)
-        V = ((U.T @ anomalies) / s[:, None]).T
+        V = (anomalies.T @ U) / s
     else:
         # U has shape (n_pts, p_pc)
         V = U
@@ -1486,10 +1484,11 @@ class CovViaEnsemble(CovarianceMatrix):
         """
         Return a dense representation of the matrix.
         """
-        # works also with np.linalg.multi_dot([(Ce._v * (Ce._w[None, :])), Ce._v.T])
         return self.anomalies.T @ self.anomalies / (self.n_ens - 1)
 
-    def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+    def solve(
+        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
+    ) -> NDArrayFloat:
         """
         Solve A^{T}Ax = b, with A, the anomalies matrix instance.
 
@@ -1510,8 +1509,8 @@ class CovViaEnsemble(CovarianceMatrix):
         return np.sum((self.anomalies**2), axis=0) / (self.n_ens - 1.0)
 
     @property
-    def precision(self) -> sp.sparse.sparray:
-        return self.solve(np.eye(self.n_pts))
+    def precision(self) -> NDArrayFloat:
+        return (self._v * self._inv_w[None, :]) @ self._v.T
 
 
 def _generate_dense_matrix_from_kernel(
@@ -1621,20 +1620,30 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-        residual = CallBack()
-        x, info = gmres(
-            self,
-            b=b,
-            rtol=rtol,
-            maxiter=maxiter,
-            callback=residual,
-            callback_type="legacy",
-            M=self._preconditioner,
-            atol=0.0,
-        )
 
-        self.solvmatvecs += residual.itercount
-        return x
+        residual = CallBack()
+        # make sure to have 2d array
+        _b = np.reshape(b, (self.n_pts, -1))
+
+        nv = np.shape(_b)[1]
+        x = np.zeros_like(_b)
+
+        # does not work for matrices ?
+        for i in range(nv):
+            x[:, i], info = gmres(
+                self,
+                b=_b[:, i],
+                rtol=rtol,
+                maxiter=maxiter,
+                callback=residual,
+                callback_type="legacy",
+                M=self._preconditioner,
+                atol=0.0,
+            )
+            self.solvmatvecs += residual.itercount
+
+        # Get the original shape back
+        return x.reshape(np.shape(b))
 
 
 def _build_kernel_preconditioner(
