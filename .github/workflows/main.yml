@@ -30,9 +30,7 @@ jobs:
         run: |
           pip install uv
           uv venv
-          # Avoid non compatibility between scikit-sparse and suitesparse
-          uv pip install "scikit-sparse<0.5.0"
-          uv pip install -e ".[all]"
+          uv pip install -e ".[scikit_sparse_old,all]"
 
       - name: Run pre-commit hooks
         run: |
@@ -74,9 +72,7 @@ jobs:
         run: |
           pip install uv
           uv venv
-          # Avoid non compatibility between scikit-sparse and suitesparse
-          uv pip install "scikit-sparse<0.5.0"
-          uv pip install -e .[all]
+          uv pip install -e .[scikit_sparse_old,all]
 
       - name: Debug pytest plugins
         run: |
