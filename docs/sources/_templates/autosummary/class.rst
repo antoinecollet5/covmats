@@ -10,7 +10,6 @@
 
 .. autoclass:: {{ objname }}
    :members:
-   :private-members:
    :show-inheritance:
    :inherited-members:
 
@@ -18,4 +17,24 @@
    .. automethod:: __init__
    {% endblock %}
 
-   .. rubric:: {{ _('Methods definition') }}
+   {% if attributes %}
+   .. rubric:: {{ _('Properties') }}
+
+   .. autosummary::
+      :nosignatures:
+
+      {% for item in attributes if not item.startswith('_') %}
+      {{ item }}
+      {% endfor %}
+   {% endif %}
+
+   {% if methods %}
+   .. rubric:: {{ _('Methods') }}
+
+   .. autosummary::
+      :nosignatures:
+
+      {% for item in methods if not item.startswith('_') %}
+      {{ item }}
+      {% endfor %}
+   {% endif %}
