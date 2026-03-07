@@ -27,7 +27,7 @@ python:
         - docs
         - install
         - examples
-    # Run Marimo export commands before building docs
+      # Run Marimo export commands before building docs
     - method: shell
       commands:
         - marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
