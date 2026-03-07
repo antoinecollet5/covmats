@@ -1,11 +1,5 @@
-# .readthedocs.yml
-# Read the Docs configuration file
-# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
-
-# Required
 version: 2
 
-# Build documentation in the docs/ directory with Sphinx
 sphinx:
   configuration: docs/sources/conf.py
 
@@ -15,15 +9,11 @@ build:
     python: "3.11"
   apt_packages:
     - libsuitesparse-dev
-
-python:
-  install:
-    # Run shell commands inside uv virtual environment
-    - method: shell
-      path: "."
-      commands:
-        - pip install uv
-        - uv venv
-        - uv pip install -e ".[scikit_sparse_old,all]"
-        - uv marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
-        - uv marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
+  commands:
+    # Install uv and your package in system Python
+    - pip install uv
+    - uv venv
+    - uv pip install -e ".[scikit_sparse_old,all]"
+    # Export Marimo notebooks
+    - uv marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
+    - uv marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
