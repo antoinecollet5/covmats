@@ -54,14 +54,14 @@ def test_SparseCholeskyFactor() -> None:
     np.testing.assert_allclose(scf.todense(), A.toarray())
     # Test shape
     assert scf.shape == (11, 11)
-    assert scf.n == 11
+    assert scf.n_pts == 11
 
     # Diagonal
     np.testing.assert_allclose(scf.get_diagonal(), A.diagonal())
     np.testing.assert_allclose(scf.get_invdiagonal(), Q.diagonal())
 
     # Test solve
-    expected_x = np.arange(scf.n, dtype=np.float64)
+    expected_x = np.arange(scf.n_pts, dtype=np.float64)
     b = A @ expected_x
     np.allclose(scf.solve(b), expected_x)
 

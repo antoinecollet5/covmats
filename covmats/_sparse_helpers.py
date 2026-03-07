@@ -52,7 +52,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     array([...])
     """
 
-    __slots__ = ["_P", "_Pt", "_D", "_invD", "_sqrtD", "_sqrtinvD", "_L"]
+    __slots__ = ["_P", "_Pt", "_D", "_invD", "_sqrtD", "_sqrtinvD", "_L", "_n_pts"]
 
     def __init__(
         self, L: sp.sparse.sparray, D: sp.sparse.sparray, P: ArrayLike
@@ -289,14 +289,8 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
     @property
     def n_pts(self) -> int:
-        """Number of points in the domain (n)."""
-        return self._n_pts
-
-    @n_pts.setter
-    def n_pts(self, n_pts: int) -> None:
-        """Set the number of points in the domain (n)."""
-        assert int(n_pts) > 0
-        self._n_pts = n_pts
+        """Number of points in the domain (n). This is read-only."""
+        return self.L.shape[0]
 
     @property
     def shape(self) -> Tuple[int, int]:
@@ -333,7 +327,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
         It as shape (n,).
         """
-        return self.D.diagonal()
+        return (self.L @ self.D @ self.L.T).diagonal()
 
     def get_invdiagonal(self) -> NDArrayFloat:
         r"""
