@@ -205,5 +205,5 @@ TODO
     :target: https://github.com/astral-sh/ty
     :alt: Checked with ty
 
-.. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.11384588.svg
-   :target: https://doi.org/10.5281/zenodo.11384588
+.. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.18900358.svg
+   :target: https://doi.org/10.5281/zenodo.18900358
