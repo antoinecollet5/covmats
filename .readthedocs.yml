@@ -20,6 +20,7 @@ python:
   install:
     # Run shell commands inside uv virtual environment
     - method: shell
+      path: "."
       commands:
         - pip install uv
         - uv venv
