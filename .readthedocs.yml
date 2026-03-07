@@ -16,19 +16,13 @@ build:
   apt_packages:
     - libsuitesparse-dev
 
-# Optionally set the version of Python and requirements required to build your docs
 python:
   install:
-      # Install your package in editable mode with optional dev extras
-    - method: pip
-      path: "."
-      extra_requirements:
-        - scikit_sparse_old
-        - docs
-        - install
-        - examples
-      # Run Marimo export commands before building docs
+    # Run shell commands inside uv virtual environment
     - method: shell
       commands:
-        - marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
-        - marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
+        - pip install uv
+        - uv venv
+        - uv pip install -e ".[scikit_sparse_old,all]"
+        - uv marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
+        - uv marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
