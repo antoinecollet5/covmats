@@ -19,7 +19,7 @@ build:
 # Optionally set the version of Python and requirements required to build your docs
 python:
   install:
-    # Install your package in editable mode with optional dev extras
+      # Install your package in editable mode with optional dev extras
     - method: pip
       path: "."
       extra_requirements:
@@ -27,3 +27,8 @@ python:
         - docs
         - install
         - examples
+    # Run Marimo export commands before building docs
+    - method: shell
+      commands:
+        - marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
+        - marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
