@@ -48,7 +48,6 @@ extensions = [
     # output of that code into the resulting document
     "jupyter_sphinx",
     "sphinx_math_dollar",  # so that $$ $$ works for math
-    "sphinx_marimo",  # support for marimo
 ]
 
 # -----------------------------------------------------------------------------
