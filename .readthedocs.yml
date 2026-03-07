@@ -13,8 +13,9 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
+  apt_packages:
+    - libsuitesparse-dev
   commands:
-    - sudo apt install -y libsuitesparse-dev
     - pip install uv
     - uv venv
     - uv pip install -e .[scikit_sparse_old,all]
