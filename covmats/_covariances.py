@@ -1,13 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Antoine COLLET
 
-"""Provide covariance matrix representation.
-
-Note: add some notes about:
-https://github.com/arvindks/kle/blob/master/covariance/covariance.py
-
-And cite Saibaba's phd thesis about the uncertainty and all.
-"""
+"""Provide covariance matrix representation."""
 
 from __future__ import annotations
 
@@ -85,6 +79,12 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         - :py:class:`CovViaEigenFactorization`
         - :py:class:`CovViaEnsemble`
 
+
+    Notes
+    -----
+    None of the :py:class:`Covariance` child implementation supports singular
+    or indefinite covariance matrices. Otherwise, they would not be invertible,
+    colorizing and whitening would not well defined.
     """
 
     __slots__ = [
@@ -96,21 +96,8 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     ]
 
     def __init__(self) -> None:
-        """
-        Initialize the instance.
-
-        Parameters
-        ----------
-        shape : Tuple[int, int]
-            Shape (n, n) of the covariance matrix.
-        log_pdet : float
-            Log pseudo determinant of the matrix.
-        rank : int
-            Rank of the matrix representation.
-        """
+        """Initialize the instance."""
         # counters
-        self.count: int = 0
-        self.solvmatvecs: int = 0
         self.dtype = np.dtype("d")  # float64 for LinearOperator
         self._allow_singular = False  # must be invertible
 
@@ -127,6 +114,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
     @property
     def shape(self) -> Tuple[int, int]:
+        """Shape of the covariance matrix (n, n)."""
         return (self.n_pts, self.n_pts)
 
     @abstractmethod
@@ -135,25 +123,24 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
     @abstractmethod
     def get_diagonal(self) -> NDArrayFloat:
-        """
-        Return the diagonal entries of the matrix (variances).
-
-        The matrix is never built explicitly. Instead the matvec interface is
-        used to multiply all column of the identity matrix.
-        """
+        """Return the diagonal entries of the matrix (variances) as a vector (n,)."""
         ...
 
     def get_trace(self) -> float:
-        """Return the trace of the covariance matrix."""
+        """Return the trace of the covariance matrix (sum of diagonal elements)."""
         return np.sum(self.get_diagonal()).item()
 
     @property
     def log_pdet(self) -> float:
         """
-        Log of the pseudo-determinant of the covariance matrix. In linear algebra and
-        statistics, the pseudo-determinant[1] is the product of all non-zero
-        eigenvalues of a square matrix. It coincides with the regular determinant
-        when the matrix is non-singular.
+        Log of the pseudo-determinant of the covariance matrix.
+
+        Note
+        ----
+
+        In linear algebra and statistics, the pseudo-determinant [1] is the product of
+        all non-zero eigenvalues of a square matrix. It coincides with the regular
+        determinant when the matrix is non-singular.
         """
         return np.array(self._log_pdet, dtype=float)[()]
 
@@ -179,7 +166,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         ...
 
     def todense(self) -> NDArrayFloat:
-        """Explicit dense representation of the covariance matrix."""
+        """Explicit dense representation of the covariance matrix with shape (n, n)."""
         return self._todense()
 
     @property
@@ -187,7 +174,9 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         """
         Explicit dense representation of the covariance matrix.
 
-        Alias for `todense()`.
+        Notes
+        -----
+        Alias for :py:meth:`CovarianceMatrix.todense()`.
         """
         return self.todense()
 
@@ -195,12 +184,13 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     @abstractmethod
     def precision(self) -> NDArrayFloat:
         """
-        Explicit dense representation of the precision matrix.
+        Explicit dense representation of the precision matrix with shape (n, n).
         """
         ...
 
     @staticmethod
     def _validate_cov_mat(A: Union[NDArrayFloat, sp.sparse.sparray], name: str) -> None:
+        """Raise an error if the input array is not square and of real number values."""
         m, n = A.shape[-2:]
         if (
             m != n
@@ -218,12 +208,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
     @staticmethod
     def _validate_dense_matrix(A: ArrayLike, name: str) -> NDArrayFloat:
+        """Raise an error if the input array is not square and of real number values."""
         A = np.atleast_2d(A)
         CovarianceMatrix._validate_cov_mat(A, name)
         return A
 
     @staticmethod
     def _validate_sparse_matrix(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
+        """Raise an error if the input array is not square and of real number values."""
         CovarianceMatrix._validate_cov_mat(A, name)
         return A
 
@@ -236,6 +228,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
     @staticmethod
     def _validate_vector(A, name):
+        """Raise an error if the input array is not a vector of real number values."""
         A = np.atleast_1d(A)
         if A.ndim != 1 or not (
             np.issubdtype(A.dtype, np.integer) or np.issubdtype(A.dtype, np.floating)
@@ -247,19 +240,21 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         return A
 
     def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return cov_obs @ x."""
+        """Return A.T @ x."""
         return self._matvec(x)
 
     def _matmat(self, X: NDArrayFloat) -> NDArrayFloat:
-        """Return cov_obs @ X."""
+        """Return A @ X."""
         return self._matvec(X)
 
     def _rmatmat(self, X: NDArrayFloat) -> NDArrayFloat:
-        """Return cov_obs @ X."""
+        """Return A @ X."""
         return self._matmat(X)
 
     @abc.abstractmethod
-    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat: ...
+    def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Perform a whitening transformation on data."""
+        ...
 
     def whiten(self, x):
         """
@@ -288,6 +283,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         References
         ----------
         .. bibliography::
+            :list: enumerated
             :filter: False
 
             novakGeneralizationColoringLinear2019
@@ -315,7 +311,9 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         return self._whiten(np.asarray(x))
 
     @abc.abstractmethod
-    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat: ...
+    def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Perform a colorizing transformation on data."""
+        ...
 
     def colorize(self, x):
         """
@@ -346,6 +344,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         References
         ----------
         .. bibliography::
+            :list: enumerated
             :filter: False
 
             WhiteningTransformation2025
@@ -374,14 +373,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         shape: Sequence[int],
         random_state: Optional[Union[int, RandomState, Generator]] = None,
     ) -> NDArrayFloat:
-        """
-        Draw samples from the multivariate normal N(0, Q).
+        r"""
+        Draw samples from the multivariate normal N(0, A).
 
         Parameters
         ----------
         shape: Sequence[int]
             Number of random vectors to sample. The resulting array will be of shape
-            (*shape, n), n being the number of elements per random vector
+            (shape, n), n being the number of elements per random vector
             (the covariance) matrix has shape (n, n).
         random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
             Pseudorandom number generator state used to generate resamples.
@@ -394,7 +393,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
         Return
         ------
-        X: The transformed array of points. It has shape (*input shape, n), n being
+        X: The transformed array of points. It has shape (input shape, n), n being
         the number of elements per random vector (the covariance)
         matrix has shape (n, n).
 
@@ -433,6 +432,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
                 [-1.25731314, -3.20285323,  1.21707469],
                 [-2.03040356, -4.46609644,  5.67643327],
                 [-0.50485116,  0.21354293, -5.518026  ]]])
+
         """
         # A 1D diagonal of a covariance matrix was passed
         return self._colorize(
@@ -493,6 +493,20 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
 
 
 def _dot_diag(x: NDArrayFloat, d: NDArrayFloat):
+    """
+    Perform the dot product between x with shape (..., n) and d with shape (n).
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Input array with shape (..., n).
+    d : NDArrayFloat
+        1D vector representing a the diagonal elements of a (n, n) diagonal matrix.
+
+    Returns
+    -------
+    A @ x
+    """
     # If d were a full diagonal matrix, x @ d would always do what we want.
     # Special treatment is needed for n-dimensional `d` in which each row
     # includes only the diagonal elements of a covariance matrix.
@@ -520,12 +534,12 @@ class CovViaDiagonal(CovarianceMatrix):
     :math:`\log\det{D}` is calculated as :math:`-2 \sum(\log{d})`,
     where the :math:`\log` operation is performed element-wise.
 
-    This `Covariance` class supports singular covariance matrices. When
-    computing ``_log_pdet``, non-positive elements of :math:`d` are
-    ignored. Whitening is not well defined when the point to be whitened
-    does not lie in the span of the columns of the covariance matrix. The
-    convention taken here is to treat the inverse square root of
-    non-positive elements of :math:`d` as zeros.
+
+    Notes
+    -----
+    No null nor negative elements are allowed, otherwise the matrix would be
+    singular or indefinite and consequently non invertible.
+
 
     Examples
     --------
@@ -574,10 +588,19 @@ class CovViaDiagonal(CovarianceMatrix):
 
     @property
     def D(self) -> NDArrayFloat:
+        """1D vector representing the diagonal elements of the covariance matrix."""
         return self._D
 
     @D.setter
     def D(self, D: NDArrayFloat) -> None:
+        """
+        Set the diagonal elements of the covariance matrix.
+
+        Notes
+        -----
+        No null nor negative elements are allowed, otherwise the matrix would be
+        singular or indefinite and consequently non invertible.
+        """
         self._D = self._validate_vector(
             A=np.asarray(D, dtype=np.float64), name="diagonal"
         )
@@ -614,9 +637,37 @@ class CovViaDiagonal(CovarianceMatrix):
         return self.get_diagonal()[:, np.newaxis] * X
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return _dot_diag(x, self._sqrtinvD)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a colorizing transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to colorize with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return _dot_diag(x, self._sqrtD)
 
     def _todense(self) -> NDArrayFloat:
@@ -748,6 +799,20 @@ class CovViaCholesky(CovarianceMatrix):
         return np.linalg.multi_dot([self.L, self.L.T, x])
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         m = x.T.shape[0]
         res = sp.linalg.solve_triangular(self.L, x.T.reshape(m, -1), lower=True)
         return res.reshape(x.T.shape).T
@@ -869,6 +934,20 @@ class CovViaSparseCholesky(CovarianceMatrix):
         return self.scf @ x
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return self.scf.whiten(x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -998,6 +1077,20 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
         return self.L @ self.L.T
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return x @ self.L
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1029,21 +1122,6 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
     """
     Representation of a covariance via the sparse Cholesky factorization of its
     sparse inverse (aka the precision matrix).
-
-    Warning
-    -------
-    This piece of code rely on
-    `scikit-sparse <https://github.com/scikit-sparse/scikit-sparse>`_
-    which itself depends on external libraries with GPL licenses, such as
-    `SuiteSparse <https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file>`_.
-    As a consequence these pieces of code must adopt that license as well.
-    Please look into the terms of this license before creating a dynamic
-    link to this pieces in your downstream package and understand
-    commercial use limitations. We are not lawyers and cannot provide any
-    guidance on the terms of this license.
-
-    Please see https://www.gnu.org/licenses/licenses.html#LGPL
-
 
     Notes
     -----
@@ -1096,6 +1174,20 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
         return self.scf.solve(x)
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return self.scf.whiten_inv(x)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1199,7 +1291,8 @@ class CovViaEigenFactorization(CovarianceMatrix):
         (eig_vals, eig_vects) : Tuple[NDArrayFloat, NDArrayFloat]
             - 1D vector of eigen values with size `n_pc`.
             - 2D arrays of eigen vectors (columns) with size `(Ns, n_pc)`. Ns being the
-            number of elements in the original covariance matrix.
+               number of elements in the original covariance matrix.
+
         """
         eigenvalues, eigenvectors = eigenfactorization
         # See if we do a common setter interface ?
@@ -1256,6 +1349,20 @@ class CovViaEigenFactorization(CovarianceMatrix):
         return np.dot(self._v, np.multiply(self._w, self._v.T))
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return x @ (self._inv_sqrt_w * self._v.T).T
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1410,6 +1517,7 @@ class CovViaEnsemble(CovarianceMatrix):
     References
     ----------
     .. bibliography::
+        :list: enumerated
         :filter: False
 
         evensenDataAssimilationEnsemble2007
@@ -1475,6 +1583,20 @@ class CovViaEnsemble(CovarianceMatrix):
         )
 
     def _whiten(self, x: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform a whitening transformation on data.
+
+        Parameters
+        ----------
+        x : NDArrayFloat
+            Data to whiten with shape (..., n), n being the number of points covered
+            by the covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            Transformed data with shape (..., n)
+        """
         return x @ (self._v * self._inv_sqrt_w[None, :])
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -1525,10 +1647,12 @@ def _generate_dense_matrix_from_kernel(
     ----------
     pts : NDArrayFloat
         DESCRIPTION.
-    kernel : TYPE
+    kernel : Callable
         DESCRIPTION.
     len_scale: NDArrayFloat
         DESCRIPTION.
+    nugget: float
+        It acts as a regularization. The default is 0.0 (no nugget effect).
 
     Returns
     -------
@@ -1543,6 +1667,8 @@ def _generate_dense_matrix_from_kernel(
 
 
 class CovKernelAsLinop(abc.ABC, LinearOperator):
+    """Abstract class providing linear operator capability from a kernel definition."""
+
     __slots__: List[str] = [
         "_kernel",
         "_pts",
@@ -1619,7 +1745,29 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
     def solve(
         self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
+        """
+        Solve Ax = b, with A, the current covariance matrix instance.
+
+        Notes
+        -----
+        It relies on GMRES and matrix-vector multiplications (column by column).
+
+        Parameters
+        ----------
+        b : NDArrayFloat
+            Array with shape (n,), (n, 1) or (n, ne), ne being the number of
+            vectors (columns). `x` will have the same shape as b.
+        rtol : float, optional
+            Relative tolerance for the convergence of GMRES, by default 1e-12
+        maxiter : int, optional
+            Maximum number of GMRES iterations, by default 1000
+
+        Returns
+        -------
+        NDArrayFloat
+            The x array with same shape as b.
+
+        """
 
         residual = CallBack()
         # make sure to have 2d array
@@ -1658,7 +1806,7 @@ def _build_kernel_preconditioner(
         The points (n, m) with n the number of data points and m the dimension of
         coordinates.
     kernel: Callable
-        TODO
+        The covariance kernel defined as a callable instance.
     k : int, optional
         Number of local centers in the preconditioner. Controls the sparity of
         the preconditioner. By default 100.
@@ -1740,6 +1888,13 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
 
     FFT based operations if kernel is stationary or translation invariant and points
     are on a regular grid.
+
+    Notes
+    -----
+    This FFT-based code is a reimplementation of Arvind Saibaba's work
+    (https://github.com/arvindks/kle).
+
+    TODO: add references.
     """
 
     __slots__: List[str] = ["_first_row"]
@@ -1754,7 +1909,8 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
         k: int = 100,
         is_use_preconditioner: bool = False,
     ) -> None:
-        """_summary_
+        """
+        Initialize the instance.
 
         Parameters
         ----------

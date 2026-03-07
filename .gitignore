@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Jupyter
+notebooks/*.ipynb
+
 # Some specific folders
 **/exported_figures*
 **/HM_RESULTS/

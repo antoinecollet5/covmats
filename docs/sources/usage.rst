@@ -8,6 +8,7 @@ The following tutorials allow you to get started and explore the possibilities o
 .. toctree::
    :maxdepth: 2
 
-   Tutorials <notebooks/tutorials>
+   Covariances <notebooks/examples_covariances>
+   Priors <notebooks/examples_priors>
 
 * :ref:`genindex`

@@ -65,6 +65,9 @@ docs = [
     "pygments>=2.11.1",
     "pydata-sphinx-theme",
     "sphinxcontrib-bibtex",
+    "sphinx_math_dollar",
+    "jupytext",
+    "sphinx_marimo",
 ]
 tests = [
     "twine==1.14.0",
@@ -74,9 +77,9 @@ tests = [
     "pytest-cookies",
     "coverage",
     "numdifftools",
-    "scikit-sparse"
+    "scikit-sparse",
 ]
-examples = ["matplotlib", "scikit-sparse"]
+examples = ["matplotlib", "scikit-sparse", "marimo"]
 scikit_sparse_old = ["scikit-sparse<0.5.0"]
 lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
 install = ["pip", "wheel"]

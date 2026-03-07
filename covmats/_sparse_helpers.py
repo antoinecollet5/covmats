@@ -13,11 +13,43 @@ from covmats._types import ArrayLike, NDArrayFloat, NDArrayInt
 # Define a type variable for the input/output type
 T = TypeVar("T", NDArrayFloat, sp.sparse.csc_array)
 
+_fact_ds = (
+    r":math:`\mathbf{LDL}^{\mathrm{T}} = \mathbf{PAP}^{\mathrm{T}}` factorization"
+)
+
 
 class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
-    """Sparse cholesky factor of a matrix A.
+    r"""
+    Sparse Cholesky factor of a matrix :math:`\mathbf{A}`.
 
-    TODO.
+    .. _factref:
+
+    .. admonition:: Factorization
+
+        It relies on the :math:`\mathbf{LDL}^{\mathrm{T}} =`
+        :math:`\mathbf{PAP}^{\mathrm{T}}` factorization where
+
+        - :math:`\mathbf{L}` is the sparse lower triangle with unit diagonal.
+        - :math:`\mathbf{D}` is the sparse diagonal matrix with diagonal entries.
+        - :math:`\mathbf{P}` is the rows permutation vector.
+
+    Note
+    ----
+    Since this code is released under BSD 3-Clause License, it is not possible to
+    include sparse factors provided by
+    `scikit-sparse <https://github.com/scikit-sparse/scikit-sparse>`_,
+    as it depends on external libraries with GPL licenses, such as
+    `SuiteSparse <https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file>`_.
+    The main goal of this implementation is therefore to mimic useful features while
+    preserving the BSD 3-Clause License compatibility.
+
+    Examples
+    --------
+    >>> from your_module import SparseCholeskyFactor
+    >>> L, D, P = ...  # sparse matrices
+    >>> factor = SparseCholeskyFactor(L, D, P)
+    >>> factor.matvec(x)
+    array([...])
     """
 
     __slots__ = ["_P", "_Pt", "_D", "_invD", "_sqrtD", "_sqrtinvD", "_L"]
@@ -25,22 +57,24 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     def __init__(
         self, L: sp.sparse.sparray, D: sp.sparse.sparray, P: ArrayLike
     ) -> None:
-        """
+        r"""
         Initialize the instance.
 
         Parameters
         ----------
         L : sp.sparse.sparray
-            "The diagonal elements of `L` are assumed to be 1!".
+            Sparse lower triangle :math:`\mathbf{L}` of
+            the :ref:`factorization <factref>`.
         D : sp.sparse.sparray
-            _description_
+            Sparse diagonal matrix $\mathbf{{D}}$ of the :ref:`factorization <factref>`.
         P : ArrayLike
-            _description_
+            1D vector $\mathbf{{P}}$ storing rows permutations of the
+            :ref:`factorization <factref>`.
 
         Raises
         ------
         ValueError
-            _description_
+            If the dimensions of `L`, `D` and `P` do not match.
         """
         # Make sure that is it 1D and integer
         self.P = np.asarray(P, dtype=np.int64).ravel()
@@ -48,16 +82,17 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         self.L = L
 
         # Assert shapes are ok.
-        if self.D.shape != self.shape or self.P.size != self.n:
+        if self.D.shape != self.shape or self.P.size != self.n_pts:
             raise ValueError(
                 f"`L` has shape {self.shape},"
                 f" `D` has shape {D.shape}, and `L` has shape {self.P.shape}!\n"
                 f"To be consistent, `D` and `P` are expected with shape {self.shape}"
-                f" and ({self.n},) respectively."
+                f" and ({self.n_pts},) respectively."
             )
 
     @staticmethod
     def _validate_lower_triangle(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
+        """Assert that the input matrix A is lower triangular."""
         try:
             assert_allclose_sparse(A, sp.sparse.tril(A))
         except AssertionError as e:
@@ -67,10 +102,18 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
     @property
     def L(self) -> sp.sparse.csc_array:
+        r"""
+        Sparse lower triangle :math:`\mathbf{L}` with unit diagonal of
+        the :ref:`factorization <factref>`.
+        """
         return self._L
 
     @L.setter
     def L(self, L: sp.sparse.csc_array) -> None:
+        r"""
+        Set the sparse lower triangle of
+        the :ref:`factorization <factref>`
+        """
         self._L = self._validate_lower_triangle(L, "L")
         # Extract the diagonal
         try:
@@ -80,10 +123,18 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
     @property
     def D(self) -> sp.sparse.csc_array:
+        r"""
+        Sparse diagonal matrix :math:`\mathbf{D}` of
+        the :ref:`factorization <factref>`.
+        """
         return self._D
 
     @D.setter
     def D(self, D: sp.sparse.csc_array) -> None:
+        r"""
+        Set the sparse diagonal matrix :math:`\mathbf{D}` of
+        the :ref:`factorization <factref>`.
+        """
         nnv = np.count_nonzero(D.diagonal() < 0.0)
         if nnv != 0:
             raise ValueError(
@@ -107,28 +158,64 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
     @property
     def invD(self) -> sp.sparse.csc_array:
+        r"""
+        Inverse of :math:`\mathbf{D}` in
+        the :ref:`factorization <factref>`.
+
+        Notes
+        -----
+        The property is read-only and updated when setting `D`.
+        """
         return self._invD
 
     @property
     def sqrtinvD(self) -> sp.sparse.csc_array:
+        r"""
+        Squared root inverse of :math:`\mathbf{D}` in
+        the :ref:`factorization <factref>`.
+
+        Notes
+        -----
+        The property is read-only and updated when setting `D`.
+        """
         return self._sqrtinvD
 
     @property
     def sqrtD(self) -> sp.sparse.csc_array:
+        r"""
+        Squared root of :math:`\mathbf{D}` in
+        the :ref:`factorization <factref>`.
+
+        Notes
+        -----
+        The property is read-only and updated when setting `D`.
+        """
         return self._sqrtD
 
     @property
     def P(self) -> NDArrayInt:
+        r"""
+        1D vector :math:`\mathbf{P}` storing rows permutations of the
+        :ref:`factorization <factref>`.
+        """
         return self._P
 
     @P.setter
     def P(self, P: ArrayLike) -> None:
+        r"""
+        Set the 1D vector :math:`\mathbf{P}` storing rows permutations of the
+        :ref:`factorization <factref>`.
+        """
         self._P = np.asarray(P, dtype=np.int64).ravel()
         # Update the back pivot
         self._Pt: NDArrayInt = np.argsort(self._P)
 
     @property
     def Pt(self) -> NDArrayInt:
+        r"""
+        1D vector :math:`\mathbf{P}` storing rows back-permutations of the
+        :ref:`factorization <factref>`.
+        """
         return self._Pt
 
     @overload
@@ -138,6 +225,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     def apply_P(self, x: sp.sparse.csc_array) -> sp.sparse.csc_array: ...
 
     def apply_P(self, x: T) -> T:
+        """Apply the permutation of rows."""
         return x[self.P]
 
     @overload
@@ -147,13 +235,28 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     def apply_Pt(self, x: sp.sparse.csc_array) -> sp.sparse.csc_array: ...
 
     def apply_Pt(self, x: T) -> T:
+        """Apply the reverse permutation of rows."""
         return x[self.Pt]
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Return :math:`\mathbf{x} = \mathbf{A}^{-1} \mathbf{b}.`
+
         # L @ D @ L' = P @ A @ P'
         # A x = b
         # P' L @ D @ L' P x = b
         # x = P' L^-T @ D^{-1} @ L^{-1} P b
+
+        Parameters
+        ----------
+        b: NDArrayFloat
+            Column vector with shape (n,) or ensemble matrix with shape (n, ne).
+
+        Returns
+        -------
+        NDArrayFloat
+            _description_
+        """
         return self.apply_Pt(
             sp.sparse.linalg.spsolve_triangular(
                 self.L.T,
@@ -167,56 +270,152 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         )
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return A @ x."""
         L = self.apply_Pt(self.L)
         return L @ (self.D @ (L.T @ x))
 
     @property
     def log_pdet(self) -> float:
+        """
+        Log of the pseudo-determinant of the covariance matrix.
+
+        Note
+        ----
+        In linear algebra and statistics, the pseudo-determinant [1] is the product of
+        all non-zero eigenvalues of a square matrix. It coincides with the regular
+        determinant when the matrix is non-singular.
+        """
         return np.log(np.prod(self.D.diagonal()))
 
     @property
-    def n(self) -> int:
-        return self.shape[0]
+    def n_pts(self) -> int:
+        """Number of points in the domain (n)."""
+        return self._n_pts
+
+    @n_pts.setter
+    def n_pts(self, n_pts: int) -> None:
+        """Set the number of points in the domain (n)."""
+        assert int(n_pts) > 0
+        self._n_pts = n_pts
 
     @property
     def shape(self) -> Tuple[int, int]:
+        """
+        Shape of the square matrix (n, n). Read-only.
+        """
         return self.L.shape[:2]
 
     @property
     def mat(self) -> sp.sparse.csc_array:
+        r"""
+        Return :math:`\mathbf{A}` as a dense array.
+
+        Note
+        ----
+        Alias for :py:meth:`SparseCholeskyFactor.todense()`. This is read-only.
+        """
         # Permute and rebuild
         L = self.apply_Pt(self.L)
         return L @ self.D @ L.T
 
     def todense(self) -> NDArrayFloat:
+        r"""Return :math:`\mathbf{A}` as a dense array."""
         # Permute and rebuild
         return self.mat.toarray()
 
     def inv(self) -> NDArrayFloat:
-        return self.solve(np.eye(self.n))
+        r"""Return the inverse :math:`\mathbf{A}^{-1}` as a dense array."""
+        return self.solve(np.eye(self.n_pts))
 
     def get_diagonal(self) -> NDArrayFloat:
-        # Permute and rebuild
-        return self.mat.diagonal()
+        r"""
+        Return the diagonal entries of the matrix :math:`\mathbf{A}`.
+
+        It as shape (n,).
+        """
+        return self.D.diagonal()
 
     def get_invdiagonal(self) -> NDArrayFloat:
-        cov_mat_diag = np.zeros(self.n)
-        v = np.zeros(self.n)
-        for i in range(self.n):
+        r"""
+        Return the diagonal entries of the inverse matrix :math:`\mathbf{A}^{-1}`.
+
+        It as shape (n,).
+        """
+        cov_mat_diag = np.zeros(self.n_pts)
+        v = np.zeros(self.n_pts)
+        for i in range(self.n_pts):
             v[i - 1] = 0.0
             v[i] = 1.0
             cov_mat_diag[i] = self.solve(v)[i]
         return cov_mat_diag
 
     def colorize(self, x: NDArrayFloat) -> NDArrayFloat:
-        # We want to solve z.T = x @ K.T, where A = K @ K^{T}
-        # We use the cholesky factorization LDL' = PA'AP'
-        # with P' = P^{-1} the permutation that makes the decomposition unique.
-        # So LD^{1/2} = PA' and A = D^{1/2}L'P
-        # Finally z = (P' L D^{1/2} x')'
+        """
+        Perform a colorizing transformation on data.
+
+        "Colorizing" ("color" as in "colored noise", in which different
+        frequencies may have different magnitudes) transforms a set of
+        uncorrelated random variables into a new set of random variables with
+        the desired covariance. When a coloring transform is applied to a
+        sample of points distributed according to a multivariate normal
+        distribution with identity covariance and zero mean, the covariance of
+        the transformed sample is approximately the covariance matrix used
+        in the coloring transform
+        :cite:p:`WhiteningTransformation2025,novakGeneralizationColoringLinear2019`.
+
+        Parameters
+        ----------
+        x : array_like
+            An array of points. The last dimension must correspond with the
+            dimensionality of the space, i.e., the number of columns in the
+            covariance matrix.
+
+        Returns
+        -------
+        x_ : array_like
+            The transformed array of points.
+
+        Note
+        ----
+        We want to solve z.T = x @ K.T, where A = K @ K^{T}
+        We use the cholesky factorization LDL' = PA'AP'
+        with P' = P^{-1} the permutation that makes the decomposition unique.
+        So LD^{1/2} = PA' and A = D^{1/2}L'P
+        Finally z = (P' L D^{1/2} x')'
+
+        References
+        ----------
+        .. bibliography::
+            :list: enumerated
+            :filter: False
+
+            WhiteningTransformation2025
+            novakGeneralizationColoringLinear2019
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import covmats
+        >>> rng = np.random.default_rng(1638083107694713882823079058616272161)
+        >>> n = 3
+        >>> A = rng.random(size=(n, n))
+        >>> cov_array = A @ A.T  # make matrix symmetric positive definite
+        >>> cholesky = np.linalg.cholesky(cov_array)
+        >>> cov_object = covmats.CovViaCholesky(cholesky)
+        >>> x = rng.multivariate_normal(np.zeros(n), np.eye(n), size=(10000))
+        >>> x_ = cov_object.colorize(x)
+        >>> cov_data = np.cov(x_, rowvar=False)
+        >>> np.allclose(cov_data, cov_array, rtol=3e-2)
+        True
+        """
         return self.apply_Pt(self.L @ self.sqrtD @ x.T).T
 
     def colorize_inv(self, x: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Perform a colorizing transformation on data as in
+        :py:meth:`SparseCholeskyFactor:colorize` but for the inverse
+        :math:`\mathbf{A}^{-1}`.
+        """
         return self.apply_Pt(
             sp.sparse.linalg.spsolve_triangular(
                 self.L.T, self.sqrtinvD @ x.T, unit_diagonal=True, lower=False
@@ -224,11 +423,66 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         ).T
 
     def whiten(self, x: NDArrayFloat) -> NDArrayFloat:
-        # We use the cholesky factorization LDL' = PA'AP'
-        # We want to solve x = z @ A.T =>  z = x A^{-T}
-        # with P' = P^{-1} the permutation that makes the decomposition unique.
-        # So LD^{1/2} = PA' and A = D^{1/2}L'P
-        # Finally z = (D^{-1/2} L^{-1} P x')'
+        """
+        Perform a whitening transformation on data.
+
+        "Whitening" ("white" as in "white noise", in which each frequency has
+        equal magnitude) transforms a set of random variables into a new set of
+        random variables with unit-diagonal covariance. When a whitening
+        transform is applied to a sample of points distributed according to
+        a multivariate normal distribution with zero mean, the covariance of
+        the transformed sample is approximately the identity matrix
+        :cite:p:`WhiteningTransformation2025, novakGeneralizationColoringLinear2019`.
+
+        Parameters
+        ----------
+        x : array_like
+            An array of points. The last dimension must correspond with the
+            dimensionality of the space, i.e., the number of columns in the
+            covariance matrix.
+
+        Returns
+        -------
+        x_ : array_like
+            The transformed array of points.
+
+        Note
+        ----
+        TODO.
+        We use the cholesky factorization LDL' = PA'AP'
+        We want to solve x = z @ A.T =>  z = x A^{-T}
+        with P' = P^{-1} the permutation that makes the decomposition unique.
+        So LD^{1/2} = PA' and A = D^{1/2}L'P
+        Finally z = (D^{-1/2} L^{-1} P x')'
+
+        References
+        ----------
+        .. bibliography::
+            :list: enumerated
+            :filter: False
+
+            novakGeneralizationColoringLinear2019
+            WhiteningTransformation2025
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import covmats
+        >>> rng = np.random.default_rng()
+        >>> n = 3
+        >>> A = rng.random(size=(n, n))
+        >>> cov_array = A @ A.T  # make matrix symmetric positive definite
+        >>> precision = np.linalg.inv(cov_array)
+        >>> cov_object = covmats.CovViaPrecisionCholesky(
+        .. sp.linalg.cholesky(precision, lower=True))
+        >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
+        >>> x_ = cov_object.whiten(x)
+        >>> np.cov(x_, rowvar=False)  # near-identity covariance
+        array([[0.97862122, 0.00893147, 0.02430451],
+               [0.00893147, 0.96719062, 0.02201312],
+               [0.02430451, 0.02201312, 0.99206881]])
+
+        """
         return (
             self.sqrtinvD
             @ sp.sparse.linalg.spsolve_triangular(
@@ -237,13 +491,31 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         ).T
 
     def whiten_inv(self, x: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Perform a whitening transformation on data as in
+        :py:meth:`SparseCholeskyFactor:whiten` but for the inverse
+        :math:`\mathbf{A}^{-1}`.
+        """
         return self.sqrtD @ (self.L.T @ self.apply_P(x.T)).T
 
 
 def assert_allclose_sparse(
     A: sp.sparse.sparray, B: sp.sparse.sparray, atol: float = 1e-8, rtol: float = 1e-8
 ) -> None:
-    """Assert that two sparse matrices or arrays are almost equal."""
+    """
+    Assert that two sparse matrices or arrays are almost equal.
+
+    Parameters
+    ----------
+    A : sp.sparse.sparray
+        First sparse matrix.
+    B : sp.sparse.sparray
+        Second sparse matrix.
+    atol : float, optional
+        Absolute tolerance for the equality test, by default 1e-8.
+    rtol : float, optional
+        Relative tolerance for the equality test, by default 1e-8.
+    """
     # If you want to check matrix shapes as well
     assert np.array_equal(A.shape, B.shape)
     r1, c1, v1 = sp.sparse.find(A)

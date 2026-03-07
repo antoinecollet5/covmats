@@ -21,33 +21,16 @@ This package allows the user to construct an object representing a covariance ma
 using any of several decompositions/approximations and perform calculations using a
 common interface.
 
-The common interface `CovarianceMatrix` can be seen as a extension of the class
-`scipy.stats.Covariance <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
+The common interface `CovarianceMatrix <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovarianceMatrix.html#covmats.CovarianceMatrix>`_
+can be seen as a extension of the class `scipy.stats.Covariance <https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
 as it inherits from it (thus making it compatible with all
 `scipy.stats <https://docs.scipy.org/doc/scipy/reference/stats.html>`_ functions and classes)
-and dope it with `LinearOperator` capabilities.
+and dope it with `LinearOperator <https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.LinearOperator.html>`_ capabilities.
 
 The package is used in large-scale inversion packages such as
 `pypcga <https://github.com/antoinecollet5/pypcga>`_,
 `pyesmda <https://github.com/antoinecollet5/pyesmda>`_ and
 `pyrtid <https://github.com/antoinecollet5/pyrtid>`_.
-
-========================
-⚠️ BSD 3-Clause Licence
-========================
-
-This code is released under BSD 3-Clause Licence. However, the pieces of code involving
-sparse cholesky (add here) rely on
-`scikit-sparse <https://github.com/scikit-sparse/scikit-sparse>`_
-which itself depends on external libraries with GPL licenses, such as
-`SuiteSparse <https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file>`_.
-As a consequence these pieces of code must adopt that license as well.
-Please look into the terms of this license before creating a dynamic
-link to this pieces in your downstream package and understand
-commercial use limitations. We are not lawyers and cannot provide any
-guidance on the terms of this license.
-
-Please see https://www.gnu.org/licenses/licenses.html#LGPL
 
 ===============
 🚀 Quick start
@@ -71,15 +54,18 @@ You might also clone the repository and install from source
 
     pip install -e .
 
-Once the installation is done, `covmats` is straighforward to use and proposes the following covariance representations:
+Once the installation is done, `covmats` is straighforward to use and proposes the following full-rank covariance representations:
 
-- `CovViaDiagonal <https://covmats.readthedocs.io/api>`_
-- `CovViaCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
-- `CovViaSparseCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
-- `CovViaPrecisionCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
-- `CovViaSparsePrecisionCholesky <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
-- `CovViaEigendecomposition <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
-- `CovViaEnsemble <https://github.com/antoinecollet5/covmats/blob/master/LICENSE>`_
+- `CovViaDiagonal <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaDiagonal.html#covmats.CovViaDiagonal>`_
+- `CovViaCholesky <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaCholesky.html#covmats.CovViaCholesky>`_
+- `CovViaSparseCholesky <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaSparseCholesky.html#covmats.CovViaSparseCholesky>`_
+- `CovViaPrecisionCholesky <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaPrecisionCholesky.html#covmats.CovViaPrecisionCholesky>`_
+- `CovViaSparsePrecisionCholesky <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaSparsePrecisionCholesky.html#covmats.CovViaSparsePrecisionCholesky>`_
+
+It also provides low-rank approximations suitable for large scale problems:
+
+- `CovViaEigenFactorization <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaEigenFactorization.html#covmats.CovViaEigenFactorization>`_
+- `CovViaEnsemble <https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovViaEnsemble.html#covmats.CovViaEnsemble>`_
 
 Let's start by importing `numpy`, `scipy` and `covmats` for the tests and define a
 random number generator seed for reproducibility:
@@ -125,12 +111,7 @@ It is possible to obtain a dense representation in a straighforward manner:
 
 It is compatible with the stats API from scipy since the base class inherit from `Covariance`.
 
-
 🏗️ Complete example with supporting paper coming Q1 2026.
-
-FFT-based matvec code is adapted from Arvind Saibaba's work (https://github.com/arvindks/kle).
-
-FMM-based code (https://arxiv.org/abs/1903.02153) will be incorporated in version 0.2
 
 ===========
 🔑 License
@@ -175,6 +156,8 @@ TODO
 
 * Free software: SPDX-License-Identifier: BSD-3-Clause
 
+.. [scipy| text:: scipy.stats.Covariance
+    :target: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
 
 .. |License| image:: https://img.shields.io/badge/License-BSD_3--Clause-blue.svg
     :target: https://github.com/antoinecollet5/covmats/blob/master/LICENSE

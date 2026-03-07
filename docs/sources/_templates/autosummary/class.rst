@@ -9,9 +9,6 @@
 .. currentmodule:: {{ module }}
 
 .. autoclass:: {{ objname }}
-   :members:
-   :show-inheritance:
-   :inherited-members:
 
    {% block methods %}
    .. automethod:: __init__
@@ -22,9 +19,10 @@
 
    .. autosummary::
       :nosignatures:
+      :toctree: generated
 
       {% for item in attributes if not item.startswith('_') %}
-      {{ item }}
+      ~{{ objname }}.{{ item }}
       {% endfor %}
    {% endif %}
 
@@ -33,8 +31,19 @@
 
    .. autosummary::
       :nosignatures:
+      :toctree: generated
 
       {% for item in methods if not item.startswith('_') %}
-      {{ item }}
+      ~{{ objname }}.{{ item }}
+      {% endfor %}
+   {% endif %}
+
+   {% if examples %}
+   .. rubric:: {{ _('Examples') }}
+
+   .. code-block:: python
+
+      {% for line in examples %}
+      {{ line }}
       {% endfor %}
    {% endif %}

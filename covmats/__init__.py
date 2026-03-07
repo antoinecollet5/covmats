@@ -1,26 +1,32 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Antoine COLLET
 
-"""Provide covariance matrix representation.
-
-It is an adaptation of Scipy's implementation adding some representation types.
-
+"""Covariance matrix representations and priors for large scale inverse problems.
 
 Abstract Covariance class
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To represent covariance matrices.
+The common interface `CovarianceMatrix
+<https://covmats.readthedocs.io/en/latest/_autosummary/covmats.CovarianceMatrix.html#covmats.CovarianceMatrix>`_
+can be seen as a extension of the class `scipy.stats.Covariance
+<https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
+as it inherits from it (thus making it compatible with all
+`scipy.stats <https://docs.scipy.org/doc/scipy/reference/stats.html>`_
+functions and classes)
+and dope it with `LinearOperator
+<https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.LinearOperator.html>`_
+capabilities.
 
 .. autosummary::
    :toctree: _autosummary
 
     CovarianceMatrix
-    CovKernelAsLinop
 
-Specialized Covariance classes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Various representation of covariance matrices.
+Full-rank covariance matrix decomposition
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Several full-rank representation of covariance matrices.
 
 .. autosummary::
    :toctree: _autosummary
@@ -30,14 +36,35 @@ Various representation of covariance matrices.
     CovViaSparseCholesky
     CovViaPrecisionCholesky
     CovViaSparsePrecisionCholesky
+
+Low-rank approximations
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Several low-rank (approximate) representation of covariance matrices.
+
+.. autosummary::
+   :toctree: _autosummary
+
     CovViaEigenFactorization
     CovViaEnsemble
+
+Kernel based approximations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Low-rank approximations from a given Kernel. Only provides the linear operations
+capabilities (no sampling not statistical calculations).
+
+.. autosummary::
+   :toctree: _autosummary
+
+    CovKernelAsLinop
     CovKernelAsLinopViaFFT
 
 Matrix compression
 ^^^^^^^^^^^^^^^^^^^
 
-Eigen decomposition
+Allow to factorize :py:class:`CovarianceMatrix` and :py:class:`CovKernelAsLinop` using
+Eigen low-rank approximation.
 
 .. autosummary::
    :toctree: _autosummary
@@ -48,7 +75,7 @@ Eigen decomposition
 Sparse Helpers
 ^^^^^^^^^^^^^^
 
-Helpers to work with sparse matrices and covariances.
+Helper to work with sparse matrices and covariances.
 
 .. autosummary::
    :toctree: _autosummary
@@ -90,8 +117,8 @@ Functions providing test data.
    :toctree: _autosummary
 
     load_precision_example_4225x
-    get_SPD_sparse_n11_example,
-    get_SPD_sparse_example,
+    get_SPD_sparse_n11_example
+    get_SPD_sparse_example
 
 
 """
