@@ -14,13 +14,13 @@ build:
     # -------------------------------------------
     # 1) Upgrade pip and install conda
     # -------------------------------------------
-    - pip install --upgrade pip setuptools wheel
-    - conda install -y -c conda-forge scikit-sparse suite-sparse cython numpy scipy
+    - pip install --upgrade pip setuptools wheel conda
+    - conda install -y -c conda-forge scikit-sparse suite-sparse
 
     # -------------------------------------------
     # 3) Create a uv virtual environment (optional)
     # -------------------------------------------
-    - pip install -e ".[scikit_sparse_old,all]"
+    - pip install -e ".[all]"
 
     # -------------------------------------------
     # 4) Export notebooks before Sphinx build
