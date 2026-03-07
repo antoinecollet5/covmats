@@ -16,8 +16,6 @@ build:
   apt_packages:
     - libsuitesparse-dev
   commands:
-    - pip install uv
-    - uv venv
-    - uv pip install -e .[scikit_sparse_old,all]
-    - uv marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
-    - uv marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
+    - pip install -e .[scikit_sparse_old,all]
+    - marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
+    - marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
