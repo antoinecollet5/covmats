@@ -186,7 +186,7 @@ TODO
     :target: https://covmats.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. |Coverage| image:: https://codecov.io/gh/antoinecollet5/covmats/branch/master/graph/badge.svg?token=ISE874MMOF
+.. |Coverage| image:: https://codecov.io/gh/antoinecollet5/covmats/graph/badge.svg?token=8lE90wylXL
     :target: https://codecov.io/gh/antoinecollet5/covmats
     :alt: Coverage
 
