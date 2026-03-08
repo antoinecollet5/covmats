@@ -4,7 +4,11 @@ import covmats
 import numpy as np
 import pytest
 import scipy as sp
-from covmats import SparseCholeskyFactor, load_precision_example_4225x
+from covmats import (
+    SparseCholeskyFactor,
+    load_precision_example_4225x,
+    load_precision_example_4225x_SCF,
+)
 from covmats._sparse_helpers import (
     assert_allclose_sparse,
     get_SPD_sparse_example,
@@ -119,6 +123,9 @@ def test_load_precision_example_4225x() -> None:
 
     A = load_precision_example_4225x()
     SparseCholeskyFactor(*_get_L_D_P(A))
+
+    # Load the cholesky factor
+    load_precision_example_4225x_SCF()
 
 
 def test_indefinite():

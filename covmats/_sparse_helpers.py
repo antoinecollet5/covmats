@@ -3,6 +3,7 @@
 
 """Wrap the sparse cholesky factorization from"""
 
+import warnings
 from typing import Tuple, TypeVar, overload
 
 import numpy as np
@@ -285,7 +286,9 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         all non-zero eigenvalues of a square matrix. It coincides with the regular
         determinant when the matrix is non-singular.
         """
-        return np.log(np.prod(self.D.diagonal()))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            return np.log(np.prod(self.D.diagonal()))
 
     @property
     def n_pts(self) -> int:

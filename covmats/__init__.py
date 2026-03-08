@@ -117,6 +117,7 @@ Functions providing test data.
    :toctree: _autosummary
 
     load_precision_example_4225x
+    load_precision_example_4225x_SCF
     get_SPD_sparse_n11_example
     get_SPD_sparse_example
 
@@ -154,7 +155,10 @@ from covmats._sparse_helpers import (
     get_SPD_sparse_example,
     get_SPD_sparse_n11_example,
 )
-from covmats.data import load_precision_example_4225x
+from covmats.data import (
+    load_precision_example_4225x,
+    load_precision_example_4225x_SCF,
+)
 
 __all__ = [
     "CovarianceMatrix",
@@ -182,6 +186,7 @@ __all__ = [
     "__email__",
     "__author__",
     "load_precision_example_4225x",
+    "load_precision_example_4225x_SCF",
     "SparseCholeskyFactor",
     "get_SPD_sparse_n11_example",
     "get_SPD_sparse_example",
