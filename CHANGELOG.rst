@@ -2,6 +2,11 @@
 Changelog
 ==============
 
+0.2.1 (2026-02-10)
+------------------
+
+* FIX: make sure tests data are included in distributions.
+
 0.2.0 (2026-02-08)
 ------------------
 
