@@ -48,7 +48,7 @@ where = ["."]
 include = ["covmats*"]
 
 [tool.setuptools.package-data]
-mypackage = ["data/*.mtx"]
+covmats = ["data/*.mtx", "data/*.npy"]
 
 [tool.setuptools.dynamic]
 version = { attr = "covmats.__about__.__version__" }
