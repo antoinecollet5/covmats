@@ -156,9 +156,6 @@ TODO
 
 * Free software: SPDX-License-Identifier: BSD-3-Clause
 
-.. [scipy| text:: scipy.stats.Covariance
-    :target: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.Covariance.html>`_
-
 .. |License| image:: https://img.shields.io/badge/License-BSD_3--Clause-blue.svg
     :target: https://github.com/antoinecollet5/covmats/blob/master/LICENSE
 
