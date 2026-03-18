@@ -187,7 +187,7 @@ TODO
     :target: https://codecov.io/gh/antoinecollet5/covmats
     :alt: Coverage
 
-.. |Codacy| image:: https://app.codacy.com/project/badge/Grade/c41f65d98b824de394162520b0d8a17a
+.. |Codacy| image:: https://app.codacy.com/project/badge/Grade/122673cd1d104aa28ada0c44b1f4e7d6
     :target: https://app.codacy.com/gh/antoinecollet5/covmats/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade
     :alt: codacy
 

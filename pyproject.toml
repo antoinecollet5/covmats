@@ -140,3 +140,7 @@ include = ["covmats", "tests", "notebooks"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "notebooks"]
+
+# skip assert warnings with codacy
+[tool.bandit]
+skips = ["B101"]
