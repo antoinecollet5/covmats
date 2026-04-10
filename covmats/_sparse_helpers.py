@@ -358,7 +358,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         distribution with identity covariance and zero mean, the covariance of
         the transformed sample is approximately the covariance matrix used
         in the coloring transform
-        :cite:p:`WhiteningTransformation2025,novakGeneralizationColoringLinear2019`.
+        :cite:p:`wikipediaWhiteningTransformation2025,novakGeneralizationColoringLinear2019`.
 
         Parameters
         ----------
@@ -386,7 +386,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
             :list: enumerated
             :filter: False
 
-            WhiteningTransformation2025
+            wikipediaWhiteningTransformation2025
             novakGeneralizationColoringLinear2019
 
         Examples
@@ -429,7 +429,8 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         transform is applied to a sample of points distributed according to
         a multivariate normal distribution with zero mean, the covariance of
         the transformed sample is approximately the identity matrix
-        :cite:p:`WhiteningTransformation2025, novakGeneralizationColoringLinear2019`.
+        :cite:p:`wikipediaWhiteningTransformation2025,
+        novakGeneralizationColoringLinear2019`.
 
         Parameters
         ----------
@@ -459,7 +460,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
             :filter: False
 
             novakGeneralizationColoringLinear2019
-            WhiteningTransformation2025
+            wikipediaWhiteningTransformation2025
 
         Examples
         --------
