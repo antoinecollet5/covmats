@@ -1020,9 +1020,11 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
 
     """
 
-    __slots__: List[str] = ["_L", "_precision"]
+    __slots__: List[str] = ["_L", "_precision", "_block_size"]
 
-    def __init__(self, L: ArrayLike, precision: Optional[ArrayLike] = None) -> None:
+    def __init__(
+        self, L: ArrayLike, precision: Optional[ArrayLike] = None, block_size: int = 256
+    ) -> None:
         """
         Initialize the instance.
 
@@ -1033,6 +1035,10 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
         precision : Optional[NDArrayFloat], optional
             Dense precision matrix, by default None. If not provided, it is
             recomputed on demand as ``L @ L.T``.
+        block_size : int, optional
+            Number of columns of the identity matrix solved for at once in
+            ``get_diagonal`` to avoid the memory consumption to blow. By default 256.
+            See the memory note below.
 
         Raises
         ------
@@ -1048,6 +1054,7 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
             )
         else:
             self._precision = None
+        self._block_size = block_size
 
     @property
     def L(self) -> NDArrayFloat:
@@ -1111,16 +1118,17 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
         return self.L @ (self.L.T) @ b
 
     def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        # Otherwise extract it using matrix vector products
-        approx_diag = np.zeros(self.n_pts)
-        # TODO: multiprocessing to speed up things ? Or by chunks of 1000 ?
-        for i in range(self.n_pts):
-            # construct the ith row of the identity matrix
-            v = np.zeros(self.n_pts)
-            v[i] = 1.0
-            approx_diag[i] = self.matvec(v)[i]
-        return approx_diag
+        r"""
+        Return the diagonal entries of the matrix (variances).
+        """
+        diag = np.zeros(self.n_pts)
+        for start in range(0, self.n_pts, self._block_size):
+            stop = min(start + self._block_size, self.n_pts)
+            I_block = np.zeros((self.n_pts, stop - start))
+            I_block[start:stop, :] = np.eye(stop - start)
+            Y_block = sp.linalg.solve_triangular(self.L, I_block, lower=True)
+            diag[start:stop] = np.sum(Y_block**2, axis=0)
+        return diag
 
 
 class CovViaSparsePrecisionCholesky(CovarianceMatrix):
@@ -1923,7 +1931,10 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
 
 
 def _build_kernel_preconditioner(
-    pts: NDArrayFloat, kernel: Callable, k: int = 100
+    pts: NDArrayFloat,
+    kernel: Callable,
+    k: int = 100,
+    logger: Optional[logging.Logger] = None,
 ) -> csr_array:
     """
     Implementation of the preconditioner based on changing basis.
@@ -1976,34 +1987,37 @@ def _build_kernel_preconditioner(
     tree: sp.spatial.cKDTree = sp.spatial.cKDTree(pts, leafsize=32)
     end: float = time()
 
-    logging.log(logging.INFO, f"Tree building time = {end - start}")
+    if logger is not None:
+        logger.info(f"Tree building time = {end - start}")
 
     # Find the nearest neighbors of all the points
     start = time()
     _dist, ind = tree.query(pts, k=k)
     end = time()
 
-    logging.log(logging.INFO, f"Nearest neighbor computation time = {end - start}")
+    if logger is not None:
+        logger.info(f"Nearest neighbor computation time = {end - start}")
 
-    Q = np.zeros((k, k), dtype="d")
-    y = np.zeros((k, 1), dtype="d")
+    y = np.zeros(k, dtype="d")
+    y[0] = 1.0
 
     row = np.tile(np.arange(nb_pts), (k, 1)).transpose()
     col = np.copy(ind)
     nu = np.zeros((nb_pts, k), dtype="d")
 
-    y[0] = 1.0
     start = time()
-
-    # TODO: This is very inefficient and must be re-written
+    potrf, potrs = sp.linalg.lapack.get_lapack_funcs(
+        ("potrf", "potrs"), (np.empty((k, k), dtype="d"),)
+    )
     for i in np.arange(nb_pts):
         Q = kernel(cdist(pts[ind[i, :], :], pts[ind[i, :], :]))
-        nui = sp.linalg.solve(Q, y)
-        nu[i] = nui.ravel()
+        c, info = potrf(Q, lower=True, overwrite_a=True, clean=False)
+        nu[i], info = potrs(c, y, lower=True)
 
     end = time()
 
-    logging.log(logging.INFO, "Elapsed time = %g" % (end - start))
+    if logger is not None:
+        logger.info("Elapsed time = %g" % (end - start))
 
     ij = np.zeros((nb_pts * k, 2), dtype="i")
     ij[:, 0] = np.copy(np.reshape(row, nb_pts * k, order="F").transpose())
