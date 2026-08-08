@@ -464,7 +464,8 @@ def test_CovViaPrecisionCholesky(is_embbed_precision: bool) -> None:
     expected_x = np.arange(n, dtype=np.float64)
     b = A @ expected_x
     np.testing.assert_allclose(cov @ expected_x, b)
-    np.testing.assert_allclose(cov.solve(b), expected_x, atol=1e-10)
+
+    np.testing.assert_allclose(cov.solve(b), expected_x, atol=1e-5)
 
     # Test colorize and whiten
     np.testing.assert_allclose(

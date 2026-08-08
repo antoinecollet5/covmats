@@ -98,6 +98,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     def __init__(self) -> None:
         """Initialize the instance."""
         # counters
+        super().__init__("d", shape=(self.n_pts, self.n_pts))
         self.dtype = np.dtype("d")  # float64 for LinearOperator
         self._allow_singular = False  # must be invertible
 
@@ -116,6 +117,11 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
     def shape(self) -> Tuple[int, int]:
         """Shape of the covariance matrix (n, n)."""
         return (self.n_pts, self.n_pts)
+
+    @shape.setter
+    def shape(self, value: Tuple[int, int]) -> None:
+        """Shape of the covariance matrix (n, n)."""
+        pass
 
     @abstractmethod
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
