@@ -131,7 +131,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         return np.sum(self.get_diagonal()).item()
 
     @property
-    def log_pdet(self) -> float:
+    def log_pdet(self) -> NDArrayFloat:
         """
         Log of the pseudo-determinant of the covariance matrix.
 
@@ -142,14 +142,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         all non-zero eigenvalues of a square matrix. It coincides with the regular
         determinant when the matrix is non-singular.
         """
-        return self._log_pdet
+        return np.array(self._log_pdet)[()]
 
     @property
-    def rank(self) -> int:
+    def rank(self) -> NDArrayInt:
         """
         Rank of the covariance matrix.
         """
-        return self._rank
+        return np.array(self._rank)[()]
 
     @property
     def subspace_size(self) -> int:
