@@ -244,21 +244,53 @@ class EnsembleMeanPriorTerm(PriorTerm):
 
 
 class DriftMatrix(PriorTerm):
-    """Represent a drift matrix prior term."""
+    r"""
+    Represent a drift (trend) matrix prior term.
+
+    A drift matrix represents the prior mean of a spatial field as a linear
+    combination of known basis functions (drift terms), such as a constant or
+    a linear trend in the point coordinates:
+
+    .. math::
+        \mathbf{m} = \mathbf{X} \boldsymbol{\beta}
+
+    with :math:`\mathbf{X}` (`mat`) the matrix of drift basis functions with
+    shape :math:`(N_s, N_{\beta})`, and :math:`\boldsymbol{\beta}` (`beta`) the
+    associated drift coefficients with shape :math:`(N_{\beta},)`. This is
+    commonly used in universal kriging / geostatistical regularization to
+    represent non-stationary trends on top of a stationary covariance model.
+
+    See Also
+    --------
+    ConstantDriftMatrix : Constant (order 0) drift.
+    LinearDriftMatrix : Linear (order 1) drift.
+    """
 
     __slots__: List[str] = ["mat"]
 
     def __init__(
         self, mat: NDArrayFloat, beta: Optional[Union[NDArrayFloat, float]] = None
     ) -> None:
-        """_summary_
+        """
+        Initialize the instance.
 
         Parameters
         ----------
         mat : NDArrayFloat
-            Matrix of coefficients: X. with shape (Ns, Nbeta)
+            Matrix of drift basis functions (coefficients) :math:`\\mathbf{X}`
+            with shape (Ns, Nbeta), Ns being the number of points and Nbeta the
+            number of drift terms (e.g., 1 for a constant drift, 1 + Ndim for a
+            linear drift).
         beta : Optional[Union[NDArrayFloat, float]], optional
-            P Coefficients, by default None. # TODO: add references and comment better.
+            Drift coefficients :math:`\\boldsymbol{\\beta}` with shape
+            (Nbeta,), by default None. Must be provided before calling
+            :py:meth:`DriftMatrix.get_values`.
+
+        Raises
+        ------
+        ValueError
+            If the shape of `beta` does not match the number of columns of
+            `mat`.
         """
         self.mat: NDArrayFloat = mat
         self.beta: Optional[Union[NDArrayFloat, float]] = beta
@@ -330,34 +362,48 @@ class DriftMatrix(PriorTerm):
 
 
 class ConstantDriftMatrix(DriftMatrix):
-    """Represent a constant drift matrix (trend)."""
+    r"""
+    Represent a constant (order 0) drift matrix (trend).
 
-    # TODO: complete this one and complexify a bit
+    The drift basis is a single, normalized constant column
+    :math:`\mathbf{X} = \frac{1}{\sqrt{N_s}}\mathbf{1}`, so that
+    :math:`\mathbf{X}\boldsymbol{\beta}` represents a spatially uniform mean
+    (i.e., ordinary/simple kriging with an unknown constant mean).
+    """
 
     def __init__(self, n_pts: int) -> None:
-        """_summary_
+        """
+        Initialize the instance.
 
         Parameters
         ----------
-        pts : NDArrayFloat
-            _description_
+        n_pts : int
+            Number of points (`Ns`) covered by the drift.
         """
         mat: NDArrayFloat = np.ones((n_pts, 1), dtype="d") / np.sqrt(n_pts)
         super().__init__(mat)
 
 
 class LinearDriftMatrix(DriftMatrix):
-    """Represent a linear drift matrix (trend)."""
+    r"""
+    Represent a linear (order 1) drift matrix (trend).
 
-    # TODO: complete this one and complexify a bit
+    The drift basis is made of a constant column followed by the raw point
+    coordinates, :math:`\mathbf{X} = [\mathbf{1}, \mathbf{pts}]`, with shape
+    :math:`(N_s, 1 + N_{dim})`, so that :math:`\mathbf{X}\boldsymbol{\beta}`
+    represents a mean varying linearly with the spatial coordinates (i.e.,
+    universal kriging with a linear trend).
+    """
 
     def __init__(self, pts: NDArrayFloat) -> None:
-        """_summary_
+        """
+        Initialize the instance.
 
         Parameters
         ----------
         pts : NDArrayFloat
-            _description_
+            Coordinates of the points, with shape (Ns, Ndim), Ndim being the
+            number of spatial dimensions.
         """
         mat: NDArrayFloat = np.ones((pts.shape[0], 1 + pts.shape[1]), dtype=np.float64)
         mat[:, 1 : mat.shape[1]] = np.copy(pts)

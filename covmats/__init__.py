@@ -82,6 +82,17 @@ Helper to work with sparse matrices and covariances.
 
     SparseCholeskyFactor
 
+Grid utilities
+^^^^^^^^^^^^^^
+
+Helper to build regular grids of points, typically used with
+:py:class:`CovKernelAsLinop` and :py:class:`CovKernelAsLinopViaFFT`.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    get_pts_coords_regular_grid
+
 Working with priors and trends
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -140,6 +151,9 @@ from covmats._covariances import (
     get_explained_var,
     get_linop_eigen_factorization,
 )
+from covmats._helpers import (
+    get_pts_coords_regular_grid,
+)
 from covmats._priors import (
     ConstantDriftMatrix,
     ConstantPriorTerm,
@@ -190,4 +204,5 @@ __all__ = [
     "SparseCholeskyFactor",
     "get_SPD_sparse_n11_example",
     "get_SPD_sparse_example",
+    "get_pts_coords_regular_grid",
 ]

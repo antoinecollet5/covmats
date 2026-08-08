@@ -46,11 +46,17 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
     Examples
     --------
-    >>> from your_module import SparseCholeskyFactor
-    >>> L, D, P = ...  # sparse matrices
-    >>> factor = SparseCholeskyFactor(L, D, P)
-    >>> factor.matvec(x)
-    array([...])
+    >>> import numpy as np
+    >>> import scipy as sp
+    >>> import covmats
+    >>> Q = covmats.get_SPD_sparse_n11_example(seed=42)  # a sparse SPD matrix
+    >>> L, D, P = sp.linalg.ldl(Q.toarray())  # dense LDL' for this example
+    >>> factor = covmats.SparseCholeskyFactor(
+    ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+    ... )
+    >>> x = np.ones(Q.shape[0])
+    >>> np.allclose(factor.matvec(x), Q @ x)
+    True
     """
 
     __slots__ = ["_P", "_Pt", "_D", "_invD", "_sqrtD", "_sqrtinvD", "_L", "_n_pts"]
@@ -256,7 +262,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         Returns
         -------
         NDArrayFloat
-            _description_
+            :math:`\mathbf{x}`, with the same shape as `b`.
         """
         return self.apply_Pt(
             sp.sparse.linalg.spsolve_triangular(
@@ -392,17 +398,20 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         Examples
         --------
         >>> import numpy as np
+        >>> import scipy as sp
         >>> import covmats
-        >>> rng = np.random.default_rng(1638083107694713882823079058616272161)
-        >>> n = 3
-        >>> A = rng.random(size=(n, n))
-        >>> cov_array = A @ A.T  # make matrix symmetric positive definite
-        >>> cholesky = np.linalg.cholesky(cov_array)
-        >>> cov_object = covmats.CovViaCholesky(cholesky)
-        >>> x = rng.multivariate_normal(np.zeros(n), np.eye(n), size=(10000))
-        >>> x_ = cov_object.colorize(x)
+        >>> rng = np.random.default_rng(0)
+        >>> n = 4
+        >>> B = rng.random(size=(n, n))
+        >>> cov_array = B @ B.T + n * np.eye(n)  # SPD covariance matrix
+        >>> L, D, P = sp.linalg.ldl(cov_array)  # dense LDL' for this example
+        >>> scf = covmats.SparseCholeskyFactor(
+        ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+        ... )
+        >>> x = rng.multivariate_normal(np.zeros(n), np.eye(n), size=10000)
+        >>> x_ = scf.colorize(x)
         >>> cov_data = np.cov(x_, rowvar=False)
-        >>> np.allclose(cov_data, cov_array, rtol=3e-2)
+        >>> np.allclose(cov_data, cov_array, atol=0.15)
         True
         """
         return self.apply_Pt(self.L @ self.sqrtD @ x.T).T
@@ -446,7 +455,6 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
 
         Note
         ----
-        TODO.
         We use the cholesky factorization LDL' = PA'AP'
         We want to solve x = z @ A.T =>  z = x A^{-T}
         with P' = P^{-1} the permutation that makes the decomposition unique.
@@ -465,20 +473,23 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         Examples
         --------
         >>> import numpy as np
+        >>> import scipy as sp
         >>> import covmats
-        >>> rng = np.random.default_rng()
-        >>> n = 3
-        >>> A = rng.random(size=(n, n))
-        >>> cov_array = A @ A.T  # make matrix symmetric positive definite
-        >>> precision = np.linalg.inv(cov_array)
-        >>> cov_object = covmats.CovViaPrecisionCholesky(
-        .. sp.linalg.cholesky(precision, lower=True))
-        >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
-        >>> x_ = cov_object.whiten(x)
-        >>> np.cov(x_, rowvar=False)  # near-identity covariance
-        array([[0.97862122, 0.00893147, 0.02430451],
-               [0.00893147, 0.96719062, 0.02201312],
-               [0.02430451, 0.02201312, 0.99206881]])
+        >>> rng = np.random.default_rng(0)
+        >>> n = 4
+        >>> B = rng.random(size=(n, n))
+        >>> cov_array = B @ B.T + n * np.eye(n)  # SPD covariance matrix
+        >>> L, D, P = sp.linalg.ldl(cov_array)  # dense LDL' for this example
+        >>> scf = covmats.SparseCholeskyFactor(
+        ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+        ... )
+        >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=10000)
+        >>> x_ = scf.whiten(x)
+        >>> np.round(np.cov(x_, rowvar=False), 2)  # near-identity covariance
+        array([[ 1.01, -0.  , -0.02, -0.  ],
+               [-0.  ,  1.02,  0.  ,  0.  ],
+               [-0.02,  0.  ,  1.  ,  0.  ],
+               [-0.  ,  0.  ,  0.  ,  0.99]])
 
         """
         return (

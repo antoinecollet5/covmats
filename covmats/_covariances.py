@@ -142,14 +142,14 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         all non-zero eigenvalues of a square matrix. It coincides with the regular
         determinant when the matrix is non-singular.
         """
-        return np.array(self._log_pdet, dtype=float)[()]
+        return self._log_pdet
 
     @property
     def rank(self) -> int:
         """
         Rank of the covariance matrix.
         """
-        return np.array(self._rank, dtype=int)[()]
+        return self._rank
 
     @property
     def subspace_size(self) -> int:
@@ -224,7 +224,7 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         if not np.allclose(A, np.tril(A)):
             message = f"The input `{name}` must be a lower-triangular matrix."
             raise ValueError(message)
-        return A
+        return np.asarray(A)
 
     @staticmethod
     def _validate_vector(A, name):
@@ -293,20 +293,22 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         Examples
         --------
         >>> import numpy as np
+        >>> import scipy as sp
         >>> import covmats
-        >>> rng = np.random.default_rng()
+        >>> rng = np.random.default_rng(0)
         >>> n = 3
         >>> A = rng.random(size=(n, n))
         >>> cov_array = A @ A.T  # make matrix symmetric positive definite
         >>> precision = np.linalg.inv(cov_array)
         >>> cov_object = covmats.CovViaPrecisionCholesky(
-        .. sp.linalg.cholesky(precision, lower=True))
+        ...     sp.linalg.cholesky(precision, lower=True)
+        ... )
         >>> x = rng.multivariate_normal(np.zeros(n), cov_array, size=(10000))
         >>> x_ = cov_object.whiten(x)
         >>> np.cov(x_, rowvar=False)  # near-identity covariance
-        array([[0.97862122, 0.00893147, 0.02430451],
-               [0.00893147, 0.96719062, 0.02201312],
-               [0.02430451, 0.02201312, 0.99206881]])
+        array([[ 1.01556476,  0.00627465,  0.01532453],
+               [ 0.00627465,  0.96778801, -0.00607417],
+               [ 0.01532453, -0.00607417,  1.00023588]])
 
         """
         return self._whiten(np.asarray(x))
@@ -407,32 +409,32 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         >>> rng_seed = 42
         >>> covd.sample_mvnormal(shape=[2], random_state=rng_seed)
         array([[ 1.11068661, -0.43723011,  2.50848692],
-            [ 3.40559829, -0.74045799, -0.90680853]])
+               [ 3.40559829, -0.74045799, -0.90680853]])
         >>> x = covd.sample_mvnormal(shape=[2, 4], random_state=rng_seed)
         >>> x
         array([[[ 1.11068661, -0.43723011,  2.50848692],
                 [ 3.40559829, -0.74045799, -0.90680853],
                 [ 3.53122721,  2.4268417 , -1.81826648],
                 [ 1.21320114, -1.46545542, -1.80376358]],
+        <BLANKLINE>
                [[ 0.54104409, -6.05032338, -6.68057804],
                 [-1.25731314, -3.20285323,  1.21707469],
                 [-2.03040356, -4.46609644,  5.67643327],
                 [-0.50485116,  0.21354293, -5.518026  ]]])
         >>> x.shape
         (2, 4, 3)
-        >>> cov_cho = covmats.CovViaCholesky(sp.linalg.cholesky(covd.todense()))
+
+        For the same seed, an equivalent :py:class:`CovViaCholesky`
+        representation of the same (here diagonal) covariance matrix produces
+        the exact same samples, since both draw the same underlying standard
+        normal variates and apply mathematically equivalent colorizing
+        transformations:
+
+        >>> cov_cho = covmats.CovViaCholesky(sp.linalg.cholesky(covd.todense(),
+        ... lower=True))
         >>> cov_cho.sample_mvnormal(shape=[2], random_state=rng_seed)
-        array([[-0.95777013, -1.11354406,  2.06162461],
-            [ 0.81715777,  1.30517512,  1.66856257]])
-        >>> cov_cho.sample_mvnormal(shape=[2, 2], random_state=rng_seed)
-        array([[[ 1.11068661, -0.43723011,  2.50848692],
-                [ 3.40559829, -0.74045799, -0.90680853],
-                [ 3.53122721,  2.4268417 , -1.81826648],
-                [ 1.21320114, -1.46545542, -1.80376358]],
-               [[ 0.54104409, -6.05032338, -6.68057804],
-                [-1.25731314, -3.20285323,  1.21707469],
-                [-2.03040356, -4.46609644,  5.67643327],
-                [-0.50485116,  0.21354293, -5.518026  ]]])
+        array([[ 1.11068661, -0.43723011,  2.50848692],
+               [ 3.40559829, -0.74045799, -0.90680853]])
 
         """
         # A 1D diagonal of a covariance matrix was passed
@@ -584,7 +586,7 @@ class CovViaDiagonal(CovarianceMatrix):
         diagonal : ArrayLike
             The diagonal elements of a diagonal matrix.
         """
-        self.D = diagonal
+        self.D = np.asarray(diagonal)
         super().__init__()
 
     @property
@@ -593,7 +595,7 @@ class CovViaDiagonal(CovarianceMatrix):
         return self._D
 
     @D.setter
-    def D(self, D: NDArrayFloat) -> None:
+    def D(self, D: ArrayLike) -> None:
         """
         Set the diagonal elements of the covariance matrix.
 
@@ -620,7 +622,7 @@ class CovViaDiagonal(CovarianceMatrix):
             )
         self.n_pts = np.size(self.D)
         self._subspace_size = self.n_pts
-        self._rank = self.n_pts
+        self._rank: int = self.n_pts
         # Update the pseudo inverse as well
         self._invD = 1.0 / self.D
         # Store the square roots for whitening and colorizing transformations
@@ -760,7 +762,7 @@ class CovViaCholesky(CovarianceMatrix):
         covariance : Optional[NDArrayFloat], optional
             Dense covariance matrix, by default None
         """
-        self.L = L
+        self.L = np.asarray(L)
         super().__init__()
         if covariance is not None:
             self._covariance = self._validate_dense_matrix(covariance, "covariance")
@@ -776,7 +778,7 @@ class CovViaCholesky(CovarianceMatrix):
     def L(self, L: NDArrayFloat) -> None:
         """Set the lower triangle of the covariance matrix Cholesky factorization."""
         self._L = self._validate_dense_lower_triangle(
-            self._validate_matrix(L, "L"), "L"
+            self._validate_dense_matrix(L, "L"), "L"
         )
         self._log_pdet = 2 * np.log(np.diag(self._L)).sum(axis=-1)
         self.n_pts = np.shape(self.L)[0]
@@ -1028,15 +1030,17 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
         ----------
         L : NDArrayFloat
             Lower triangle of the precision matrix Cholesky factorization.
-        covariance : Optional[NDArrayFloat], optional
-            Dense precision matrix, by default None
+        precision : Optional[NDArrayFloat], optional
+            Dense precision matrix, by default None. If not provided, it is
+            recomputed on demand as ``L @ L.T``.
 
         Raises
         ------
         ValueError
-            _description_
+            If `L` is not a square, lower-triangular, two-dimensional array of
+            real numbers.
         """
-        self.L = L
+        self.L = np.asarray(L)
         super().__init__()
         if precision is not None:
             self._precision: Optional[NDArrayFloat] = self._validate_dense_matrix(
@@ -1054,7 +1058,7 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
     def L(self, L: NDArrayFloat) -> None:
         """Set the lower triangle of the precision matrix Cholesky factorization."""
         self._L = self._validate_dense_lower_triangle(
-            self._validate_matrix(L, "L"), "L"
+            self._validate_dense_matrix(L, "L"), "L"
         )
         self._log_pdet = -2 * np.log(np.diag(self.L)).sum(axis=-1)
         self.n_pts = np.shape(self.L)[0]
@@ -1120,13 +1124,43 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
 
 
 class CovViaSparsePrecisionCholesky(CovarianceMatrix):
-    """
+    r"""
     Representation of a covariance via the sparse Cholesky factorization of its
     sparse inverse (aka the precision matrix).
 
     Notes
     -----
-    Blablabla.
+    Let the covariance matrix be :math:`\mathbf{A}`, its precision matrix be
+    :math:`\mathbf{Q} = \mathbf{A}^{-1}`, and let
+    :math:`\mathbf{L}\mathbf{D}\mathbf{L}^{T} = \mathbf{P}\mathbf{Q}\mathbf{P}^{T}`
+    be the sparse :math:`\mathbf{L}\mathbf{D}\mathbf{L}^{T}` factorization of
+    :math:`\mathbf{Q}` (see :py:class:`SparseCholeskyFactor`).
+
+    Products with the covariance matrix and whitening/colorizing operations
+    are obtained by solving sparse triangular systems involving `L` and `D`,
+    so that the dense covariance matrix :math:`\mathbf{A}` is never built
+    explicitly. This makes this representation well suited to large-scale,
+    sparse precision matrices such as those arising from Markov random fields
+    or SPDE-based Gaussian random fields.
+
+    This `Covariance` class does not support singular covariance/precision
+    matrices because the Cholesky-like factorization does not exist for a
+    singular matrix.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import scipy as sp
+    >>> import covmats
+    >>> Q = covmats.get_SPD_sparse_n11_example(seed=42)  # sparse precision
+    >>> L, D, P = sp.linalg.ldl(Q.toarray())  # dense LDL' for the example
+    >>> scf = covmats.SparseCholeskyFactor(
+    ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+    ... )
+    >>> cov = covmats.CovViaSparsePrecisionCholesky(scf)
+    >>> x = np.random.default_rng(0).random(Q.shape[0])
+    >>> np.allclose(cov.solve(cov @ x), x)
+    True
     """
 
     __slots__: List[str] = [
@@ -1434,19 +1468,32 @@ class CovViaEigenFactorization(CovarianceMatrix):
         )
 
 
-def get_eigen_factorization_gram_matrix_trick(anomalies: NDArrayFloat) -> NDArrayFloat:
-    """
-    _summary_
+def get_eigen_factorization_gram_matrix_trick(
+    anomalies: NDArrayFloat,
+) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    r"""
+    Eigen-factorize :math:`\mathbf{A}^{T}\mathbf{A}` using the Gram matrix trick.
+
+    Rather than eigen-decomposing the (potentially large) :math:`N_s \times N_s`
+    matrix :math:`\mathbf{A}^{T}\mathbf{A}` directly, this uses the fact that
+    the non-zero eigenvalues of :math:`\mathbf{A}^{T}\mathbf{A}` and
+    :math:`\mathbf{A}\mathbf{A}^{T}` are identical, and picks whichever of the
+    two Gram matrices is smaller (:math:`N_e \times N_e` when there are fewer
+    ensemble members than points). This is especially useful for
+    :py:class:`CovViaEnsemble`, where :math:`N_e \ll N_s`.
 
     Parameters
     ----------
     anomalies : NDArrayFloat
-        _description_
+        Matrix of anomalies with shape :math:`(N_e, N_s)`, :math:`N_e` being the
+        number of ensemble members and :math:`N_s` the number of points.
 
     Returns
     -------
-    NDArrayFloat
-        _description_
+    Tuple[NDArrayFloat, NDArrayFloat]
+        ``(V, s)``: `V`, the eigenvectors with shape :math:`(N_s, n_{pc})`, and
+        `s`, the square roots of the associated (strictly positive) eigenvalues
+        with shape :math:`(n_{pc},)`.
     """
     ne, n_pts = np.shape(anomalies)
     if ne < n_pts:
@@ -1509,11 +1556,15 @@ class CovViaEnsemble(CovarianceMatrix):
     Note
     ----
     Practically, the dense covariance matrix is never built,
-    only the anomalies matrix :math:`\mathbf{A}` is used. The product between the
-    inverse of the covariance matrix and a vector
-    :math:`\mathbf{x} = \mathbf{\Sigma_{ss}}^{-1}\mathbf{b}`
-    is obtained solving the system :math:`\mathbf{A}^{T}\mathbf{Ax} = \mathbf{b}`,
-    using gmres, where only anomalies matrix vector products are required.
+    only the anomalies matrix :math:`\mathbf{A}` is used. A low-rank eigen
+    decomposition :math:`\mathbf{\Sigma_{ss}} = \mathbf{V}\mathbf{W}\mathbf{V}^{T}`
+    is obtained from :math:`\mathbf{A}` using the Gram matrix trick (see
+    :py:func:`get_eigen_factorization_gram_matrix_trick`), which is cheap when
+    the ensemble size :math:`N_{e}` is much smaller than the number of points
+    :math:`N_{s}`. The product between the inverse of the covariance matrix
+    and a vector :math:`\mathbf{x} = \mathbf{\Sigma_{ss}}^{-1}\mathbf{b}` is
+    then obtained as :math:`\mathbf{x} =
+    \mathbf{V}\mathbf{W}^{-1}\mathbf{V}^{T}\mathbf{b}`.
 
     References
     ----------
@@ -1612,12 +1663,30 @@ class CovViaEnsemble(CovarianceMatrix):
     def solve(
         self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
-        """
-        Solve A^{T}Ax = b, with A, the anomalies matrix instance.
+        r"""
+        Return :math:`\mathbf{\Sigma_{ss}}^{-1}\mathbf{b}`.
 
-        Note that the dense covariance matrix is never built.
+        Note that the dense covariance matrix is never built explicitly.
+        Instead, the low-rank eigen decomposition
+        :math:`\mathbf{\Sigma_{ss}} = \mathbf{V}\mathbf{W}\mathbf{V}^{T}`
+        obtained via the Gram matrix trick (see
+        :py:func:`get_eigen_factorization_gram_matrix_trick`) is used, so that
+        :math:`\mathbf{\Sigma_{ss}}^{-1}\mathbf{b} =
+        \mathbf{V}\mathbf{W}^{-1}\mathbf{V}^{T}\mathbf{b}`.
 
-        TODO: explains that it relies on the eigen decomposition.
+        Parameters
+        ----------
+        b : NDArrayFloat
+            Column vector with shape (n,) or ensemble matrix with shape (n, ne).
+        rtol : float, optional
+            Unused, kept for interface consistency with other representations.
+        maxiter : int, optional
+            Unused, kept for interface consistency with other representations.
+
+        Returns
+        -------
+        NDArrayFloat
+            :math:`\mathbf{x}` with the same shape as `b`.
         """
         return np.linalg.multi_dot(
             [
@@ -1647,11 +1716,15 @@ def _generate_dense_matrix_from_kernel(
     Parameters
     ----------
     pts : NDArrayFloat
-        DESCRIPTION.
+        Coordinates of the points covered by the covariance matrix, with shape
+        (Npts, Ndim), Ndim being the number of spatial dimensions.
     kernel : Callable
-        DESCRIPTION.
+        Covariance kernel. It must accept an array of (scaled) distances and
+        return the associated covariance values.
     len_scale: NDArrayFloat
-        DESCRIPTION.
+        Correlation length(s) used to scale the points coordinates before
+        evaluating the kernel. Either a scalar (isotropic) or a vector with
+        one length per dimension (anisotropic).
     nugget: float
         It acts as a regularization. The default is 0.0 (no nugget effect).
 
@@ -1668,12 +1741,29 @@ def _generate_dense_matrix_from_kernel(
 
 
 class CovKernelAsLinop(abc.ABC, LinearOperator):
-    """Abstract class providing linear operator capability from a kernel definition."""
+    """
+    Abstract class providing linear operator capability from a kernel definition.
+
+    Given a covariance kernel and a set of points, this builds a
+    :py:class:`~scipy.sparse.linalg.LinearOperator` exposing matrix-vector
+    products with the corresponding (Npts, Npts) covariance matrix, without
+    requiring the user to assemble it densely themselves. It only provides
+    linear-operator capabilities (matrix-vector products and, via GMRES,
+    linear solves) -- no sampling or other statistical calculations, unlike
+    the full :py:class:`CovarianceMatrix` hierarchy.
+
+    See Also
+    --------
+    CovKernelAsLinopViaFFT : A subclass specialized for stationary kernels on
+        regular grids, using FFT-based matrix-vector products that avoid
+        building the dense matrix even once.
+    """
 
     __slots__: List[str] = [
         "_kernel",
         "_pts",
         "_nugget",
+        "_len_scale",
         "_preconditioner",
         "count",
         "solvematvecs",
@@ -1688,17 +1778,32 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         k: int = 100,
         is_use_preconditioner: bool = False,
     ) -> None:
-        """
+        r"""
         Initialize the instance.
 
         Parameters
         ----------
         pts : NDArrayFloat
-            _description_
+            Coordinates of the points covered by the covariance matrix, with
+            shape (Npts, Ndim), Ndim being the number of spatial dimensions.
         kernel : Callable
-            _description_
+            Covariance kernel. It must accept an array of (scaled) distances
+            and return the associated covariance values, e.g. an exponential
+            or Matérn kernel.
+        len_scale : NDArrayFloat
+            Correlation length(s) used to scale the points coordinates before
+            evaluating the kernel. Either a scalar (isotropic) or a vector
+            with one length per dimension (anisotropic).
         nugget : float, optional
-            _description_, by default 0.0
+            Nugget effect (diagonal regularization) added to the covariance
+            matrix to improve its conditioning, by default 0.0 (no nugget).
+        k : int, optional
+            Number of local centers used to build the preconditioner when
+            `is_use_preconditioner` is True, by default 100.
+        is_use_preconditioner : bool, optional
+            Whether to build a sparse preconditioner at instance creation and
+            use it when solving :math:`\mathbf{Ax} = \mathbf{b}` systems with
+            :py:meth:`CovKernelAsLinop.solve`. By default False.
         """
         self._kernel: Callable = kernel
         self._pts: NDArrayFloat = pts
@@ -1706,7 +1811,7 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         self._len_scale: NDArrayFloat = len_scale
         # counters
         self.count: int = 0
-        self.solvmatvecs: int = 0
+        self.solvematvecs: int = 0
 
         super().__init__(shape=(self.n_pts, self.n_pts), dtype="d")
 
@@ -1722,6 +1827,28 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         """Return the number of points covered."""
         return np.shape(self._pts)[0]
 
+    @cached_property
+    def _dense_matrix(self) -> NDArrayFloat:
+        """
+        Cache the dense (Npts, Npts) covariance matrix built from the kernel.
+
+        Note
+        ----
+        This makes :py:meth:`CovKernelAsLinop.matvec` (and hence
+        :py:meth:`CovKernelAsLinop.solve`, which calls it repeatedly through
+        GMRES) efficient after the first call, at the cost of the O(Npts^2)
+        memory of the dense representation. For very large point sets where
+        this is prohibitive, and when the kernel is stationary on a regular
+        grid, prefer :py:class:`CovKernelAsLinopViaFFT`, which never
+        materializes the dense matrix.
+        """
+        return self.todense()
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        self.count += 1
+        return self._dense_matrix @ x
+
     def todense(self) -> NDArrayFloat:
         """
         Explicit dense representation of the covariance matrix.
@@ -1735,13 +1862,13 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         return self._kernel(np.zeros(len(self._pts)))
 
     def reset_comptors(self) -> None:
-        """Set the comptors to zero."""
+        """Reset the internal call counters (`count` and `solvematvecs`) to zero."""
         self.count = 0
-        self.solvmatvecs = 0
+        self.solvematvecs = 0
 
     def itercount(self) -> int:
-        """Return the number of counts."""
-        return self.count
+        """Return the cumulated number of GMRES matrix-vector products performed."""
+        return self.solvematvecs
 
     def solve(
         self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
@@ -1789,7 +1916,7 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
                 M=self._preconditioner,
                 atol=0.0,
             )
-            self.solvmatvecs += residual.itercount
+            self.solvematvecs += residual.itercount
 
         # Get the original shape back
         return x.reshape(np.shape(b))
@@ -1815,12 +1942,15 @@ def _build_kernel_preconditioner(
     Returns
     -------
     csr_array
-        _description_
+        Sparse approximate inverse (precision) matrix with shape (n, n), used
+        as a preconditioner `M` for the GMRES solve in
+        :py:meth:`CovKernelAsLinop.solve`.
 
     Raises
     ------
     ValueError
-        _description_
+        If the number of points is null, or if `k` is greater than the number
+        of points.
 
     Notes:
     ------
@@ -1915,16 +2045,23 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
 
         Parameters
         ----------
-        kernel : _type_
-            _description_
-        mesh_dim : Union[NDArrayInt, Tuple[float, float]]
-            _description_
-        domain_shape : Union[NDArrayInt, Tuple[int, int]]
-            _description_
+        kernel : Callable
+            Covariance kernel. It must accept an array of (scaled) distances
+            and return the associated covariance values, e.g. an exponential
+            or Matérn kernel.
+        mesh_dim : Union[float, NDArrayFloat, Sequence[float]]
+            Dimensions of one mesh (grid cell) of the regular grid, one value
+            per spatial dimension.
+        domain_shape : Union[int, NDArrayInt, Sequence[int]]
+            Shape of the regular grid (number of grid cells along each axis).
+            Supports 1D, 2D and 3D grids.
         len_scale : NDArrayFloat
-            _description_
+            Correlation length(s) used to scale the points coordinates before
+            evaluating the kernel. Either a scalar (isotropic) or a vector
+            with one length per dimension (anisotropic).
         nugget : float, optional
-            _description_, by default 0.0
+            Nugget effect (diagonal regularization) added to the covariance
+            matrix to improve its conditioning, by default 0.0 (no nugget).
         k : int, optional
             Number of local centers in the preconditioner. Controls the sparity of
             the preconditioner. It should be inferior to the number of points.
@@ -1933,7 +2070,7 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
             Whether to build the preconditioner at instance creation and use it to
             solve Ax = b systems. The default is False.
         """
-        self.param_shape: NDArrayInt = np.array(domain_shape, dtype=np.int8)
+        self.param_shape: NDArrayInt = np.array(domain_shape, dtype=np.int64)
         # Coordinates of the points in the grid with shape (Npts, Ndim)
         pts = get_pts_coords_regular_grid(mesh_dim, self.param_shape)
 
