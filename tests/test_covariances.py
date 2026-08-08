@@ -1,5 +1,6 @@
 """Some tests to refactor."""
 
+import logging
 import re
 from typing import no_type_check
 
@@ -576,8 +577,10 @@ def test_build_kernel_preconditioner() -> None:
 
     pts = get_pts_coords_regular_grid(mesh_dim, param_shape)
 
+    logger = logging.getLogger("Main")
+
     # No issue
-    _build_kernel_preconditioner(pts, exponential_kernel, k=100)
+    _build_kernel_preconditioner(pts, exponential_kernel, k=100, logger=logger)
 
     # Issue
     with pytest.raises(ValueError, match="The number of points cannot be null !"):
@@ -588,7 +591,9 @@ def test_build_kernel_preconditioner() -> None:
             "k (1000) must be lower or equal to the number of points (225)!"
         ),
     ):
-        _build_kernel_preconditioner(np.array(pts), exponential_kernel, k=1000)
+        _build_kernel_preconditioner(
+            np.array(pts), exponential_kernel, k=1000, logger=logger
+        )
 
 
 def test_fft_covariance_matrix() -> None:
