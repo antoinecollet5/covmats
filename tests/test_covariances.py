@@ -597,6 +597,23 @@ def test_build_kernel_preconditioner() -> None:
         )
 
 
+def test_cov_as_linop() -> None:
+
+    pts_grid = covmats.get_pts_coords_regular_grid(mesh_dim=1.0, shape=(6, 6))
+    pts_grid.shape
+
+    def exponential_kernel(d, sill=1.0):
+        return sill * np.exp(-d)
+
+    cov_kernel = covmats.CovKernelAsLinop(
+        pts_grid, exponential_kernel, len_scale=np.array([2.0, 2.0])
+    )
+
+    np.testing.assert_allclose(cov_kernel.solve(cov_kernel @ np.ones(36)), np.ones(36))
+
+    assert cov_kernel.shape == (36, 36)
+
+
 def test_fft_covariance_matrix() -> None:
     _number_grid_cells = 225
     prior_std = 2.0

@@ -1841,11 +1841,6 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         """Return the number of points covered."""
         return np.shape(self._pts)[0]
 
-    @abstractmethod
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        ...
-
     def todense(self) -> NDArrayFloat:
         """
         Explicit dense representation of the covariance matrix.
@@ -1853,6 +1848,28 @@ class CovKernelAsLinop(abc.ABC, LinearOperator):
         return _generate_dense_matrix_from_kernel(
             self._pts, self._kernel, self._len_scale, self._nugget
         )
+
+    @cached_property
+    def _dense_matrix(self) -> NDArrayFloat:
+        """
+        Cache the dense (Npts, Npts) covariance matrix built from the kernel.
+
+        Note
+        ----
+        This makes :py:meth:`CovKernelAsLinop.matvec` (and hence
+        :py:meth:`CovKernelAsLinop.solve`, which calls it repeatedly through
+        GMRES) efficient after the first call, at the cost of the O(Npts^2)
+        memory of the dense representation. For very large point sets where
+        this is prohibitive, and when the kernel is stationary on a regular
+        grid, prefer :py:class:`CovKernelAsLinopViaFFT`, which never
+        materializes the dense matrix.
+        """
+        return self.todense()
+
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x."""
+        self.count += 1
+        return self._dense_matrix @ x
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
