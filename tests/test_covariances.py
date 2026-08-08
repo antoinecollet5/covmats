@@ -638,7 +638,7 @@ def test_fft_covariance_matrix() -> None:
     np.testing.assert_allclose(cov.solve(cov @ np.ones(225)), np.ones(225))
 
 
-@pytest.mark.parametrize("is_use_preconditioner,", [True, False])
+@pytest.mark.parametrize("is_use_preconditioner", [True, False])
 def test_eigen_decompose_and_associated_functions(is_use_preconditioner: bool) -> None:
     _number_grid_cells = 225
     prior_std = 2.0
