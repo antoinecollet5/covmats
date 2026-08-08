@@ -97,6 +97,8 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
                 f" and ({self.n_pts},) respectively."
             )
 
+        super().__init__("d", shape=(self.n_pts, self.n_pts))
+
     @staticmethod
     def _validate_lower_triangle(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
         """Assert that the input matrix A is lower triangular."""
@@ -307,6 +309,10 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         Shape of the square matrix (n, n). Read-only.
         """
         return self.L.shape[:2]
+
+    @shape.setter
+    def shape(self, value: Tuple[int, int]) -> None:
+        pass
 
     @property
     def mat(self) -> sp.sparse.csc_array:
