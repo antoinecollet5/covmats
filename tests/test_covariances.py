@@ -1,6 +1,7 @@
 """Some tests to refactor."""
 
 import re
+from typing import no_type_check
 
 import covmats
 import numpy as np
@@ -15,7 +16,26 @@ from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 from covmats.data import load_precision_example_4225x
 
-from .sparse_helpers import _get_L_D_P  # ty:ignore[unresolved-import]
+
+@no_type_check
+def _get_L_D_P(A: sp.sparse.sparray):
+    """
+    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
+
+    Note that sksparse uses SuiteSparse which is LGPL licence.
+    """
+    import sksparse.cholmod as cholmod
+
+    # Need to take the API change into account
+    try:
+        # sksparse 4.x
+        L, D, P = cholmod.ldl(A, order="amd")
+    except AttributeError:
+        # sksparse 5.x
+        f = cholmod.cholesky(A)
+        (L, D), P = f.L_D(), f.P()
+    return L, D, P
+
 
 v3 = np.array([3.0, 1.0, 8.0])
 V34 = np.vstack([v3] * 4).T
