@@ -4,6 +4,7 @@
 """Wrap the sparse cholesky factorization from"""
 
 import warnings
+from functools import cached_property
 from typing import Tuple, TypeVar, overload
 
 import numpy as np
@@ -59,7 +60,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
     True
     """
 
-    __slots__ = ["_P", "_Pt", "_D", "_invD", "_sqrtD", "_sqrtinvD", "_L", "_n_pts"]
+    __slots__ = ["_P", "_D", "_L", "_n_pts"]
 
     def __init__(
         self, L: sp.sparse.sparray, D: sp.sparse.sparray, P: ArrayLike
@@ -159,13 +160,8 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
             )
 
         self._D = D
-        # Update the pseudo inverse as well
-        self._invD = sp.sparse.diags(1.0 / self.D.diagonal())
-        # Store the square roots for whitening and colorizing transformations
-        self._sqrtD = np.sqrt(self.D)
-        self._sqrtinvD = np.sqrt(self.invD)
 
-    @property
+    @cached_property
     def invD(self) -> sp.sparse.csc_array:
         r"""
         Inverse of :math:`\mathbf{D}` in
@@ -175,9 +171,9 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return self._invD
+        return sp.sparse.diags(1.0 / self.D.diagonal())
 
-    @property
+    @cached_property
     def sqrtinvD(self) -> sp.sparse.csc_array:
         r"""
         Squared root inverse of :math:`\mathbf{D}` in
@@ -187,9 +183,9 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return self._sqrtinvD
+        return np.sqrt(self.invD)
 
-    @property
+    @cached_property
     def sqrtD(self) -> sp.sparse.csc_array:
         r"""
         Squared root of :math:`\mathbf{D}` in
@@ -199,7 +195,7 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return self._sqrtD
+        return np.sqrt(self.D)
 
     @property
     def P(self) -> NDArrayInt:
@@ -216,16 +212,14 @@ class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
         :ref:`factorization <factref>`.
         """
         self._P = np.asarray(P, dtype=np.int64).ravel()
-        # Update the back pivot
-        self._Pt: NDArrayInt = np.argsort(self._P)
 
-    @property
+    @cached_property
     def Pt(self) -> NDArrayInt:
         r"""
         1D vector :math:`\mathbf{P}` storing rows back-permutations of the
         :ref:`factorization <factref>`.
         """
-        return self._Pt
+        return np.argsort(self._P)
 
     @overload
     def apply_P(self, x: NDArrayFloat) -> NDArrayFloat: ...

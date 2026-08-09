@@ -581,7 +581,7 @@ class CovViaDiagonal(CovarianceMatrix):
 
     """
 
-    __slots__ = ["_D", "_sqrtD", "_invD", "_i_zero"]
+    __slots__ = ["_D", "_i_zero"]
 
     def __init__(self, diagonal: ArrayLike) -> None:
         """
@@ -629,13 +629,23 @@ class CovViaDiagonal(CovarianceMatrix):
         self.n_pts = np.size(self.D)
         self._subspace_size = self.n_pts
         self._rank: int = self.n_pts
-        # Update the pseudo inverse as well
-        self._invD = 1.0 / self.D
-        # Store the square roots for whitening and colorizing transformations
-        self._sqrtD = np.sqrt(self.D)
-        self._sqrtinvD = np.sqrt(self._invD)
         # Update the log pseudo determinant
         self._log_pdet = np.sum(np.log(self.D), axis=-1)
+
+    @cached_property
+    def invD(self) -> NDArrayFloat:
+        """Pseuso inverse of the diagonal."""
+        return 1.0 / self.D
+
+    @cached_property
+    def sqrtD(self) -> NDArrayFloat:
+        """Diagonal square roots for whitening and colorizing transformations."""
+        return np.sqrt(self.D)
+
+    @cached_property
+    def sqrtinvD(self) -> NDArrayFloat:
+        """Diagonal inverse square roots."""
+        return np.sqrt(self.invD)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -660,7 +670,7 @@ class CovViaDiagonal(CovarianceMatrix):
         NDArrayFloat
             Transformed data with shape (..., n)
         """
-        return _dot_diag(x, self._sqrtinvD)
+        return _dot_diag(x, self.sqrtinvD)
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         """
@@ -677,7 +687,7 @@ class CovViaDiagonal(CovarianceMatrix):
         NDArrayFloat
             Transformed data with shape (..., n)
         """
-        return _dot_diag(x, self._sqrtD)
+        return _dot_diag(x, self.sqrtD)
 
     def _todense(self) -> NDArrayFloat:
         return np.apply_along_axis(np.diag, -1, self.D)
@@ -685,7 +695,7 @@ class CovViaDiagonal(CovarianceMatrix):
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
 
-        return self._invD * b if b.ndim < 2 else (self._invD)[:, np.newaxis] * b
+        return self.invD * b if b.ndim < 2 else (self.invD)[:, np.newaxis] * b
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
@@ -696,7 +706,7 @@ class CovViaDiagonal(CovarianceMatrix):
         """
         Explicit dense representation of the precision matrix.
         """
-        return np.diag(self._invD)
+        return np.diag(self.invD)
 
 
 class CovViaCholesky(CovarianceMatrix):
