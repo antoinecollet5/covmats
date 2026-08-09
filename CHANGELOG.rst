@@ -2,6 +2,11 @@
 Changelog
 ==============
 
+0.3.1 (2026-08-09)
+------------------
+
+* FIX: use cached_property instead of precomputation in setters to be safer when using multiprocessing
+
 0.3.0 (2026-08-08)
 ------------------
 * ENH: expose `get_pts_coords_regular_grid()` in the public API (`covmats.get_pts_coords_regular_grid`);
