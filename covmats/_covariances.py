@@ -23,9 +23,7 @@ from covmats._helpers import (
     check_random_state,
     get_pts_coords_regular_grid,
 )
-from covmats._sparse_helpers import (
-    SparseCholeskyFactor,
-)
+from covmats._sparse_helpers import SparseCholeskyFactor, _PickleSafeLinearOperator
 from covmats._toeplitz import (
     create_toepliz_first_row,
     toeplitz_product,
@@ -55,16 +53,15 @@ class CallBack:
         self.res = []
 
 
-class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
+class CovarianceMatrix(_PickleSafeLinearOperator, sp.stats.Covariance, abc.ABC):
     """
     Abstract representation of a covariance matrix.
 
-    Calculations involving covariance matrices (e.g. data whitening,
-    multivariate normal function evaluation) are often performed more
-    efficiently using a decomposition of the covariance matrix instead of the
-    covariance matrix itself. This class allows the user to construct an
-    object representing a covariance matrix using any of several
-    decompositions and perform calculations using a common interface.
+    Calculations involving covariance matrices (e.g. data whitening, multivariate normal
+    function evaluation) are often performed more efficiently using a decomposition of
+    the covariance matrix instead of the covariance matrix itself. This class allows
+    the user to construct an object representing a covariance matrix using any of
+    several decompositions and perform calculations using a common interface.
 
     .. note::
 
@@ -266,13 +263,12 @@ class CovarianceMatrix(LinearOperator, sp.stats.Covariance, abc.ABC):
         """
         Perform a whitening transformation on data.
 
-        "Whitening" ("white" as in "white noise", in which each frequency has
-        equal magnitude) transforms a set of random variables into a new set of
-        random variables with unit-diagonal covariance. When a whitening
-        transform is applied to a sample of points distributed according to
-        a multivariate normal distribution with zero mean, the covariance of
-        the transformed sample is approximately the identity matrix
-        :cite:p:`wikipediaWhiteningTransformation2025,
+        "Whitening" ("white" as in "white noise", in which each frequency has equal
+        magnitude) transforms a set of random variables into a new set of random
+        variables with unit-diagonal covariance. When a whitening transform is applied
+        to a sample of points distributed according to a multivariate normal
+        distribution with zero mean, the covariance of the transformed sample is
+        approximately the identity matrix :cite:p:`wikipediaWhiteningTransformation2025,
         novakGeneralizationColoringLinear2019`.
 
         Parameters
@@ -1764,7 +1760,7 @@ def _generate_dense_matrix_from_kernel(
     return kernel(sp.spatial.distance_matrix(scaled_pts, scaled_pts))
 
 
-class CovKernelAsLinop(abc.ABC, LinearOperator):
+class CovKernelAsLinop(abc.ABC, _PickleSafeLinearOperator):
     """
     Abstract class providing linear operator capability from a kernel definition.
 

@@ -20,7 +20,140 @@ _fact_ds = (
 )
 
 
-class SparseCholeskyFactor(sp.sparse.linalg.LinearOperator):
+class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
+    """
+    A LinearOperator subclass whose pickling correctly preserves state
+    stored in __slots__, on every scipy/Python version.
+
+    Background
+    ----------
+    scipy >= 1.18.0 added ``LinearOperator.__getstate__``, which serializes
+    only ``self.__dict__`` (apparently to make the new Array API namespace
+    reference ``_xp`` picklable) and has no awareness of ``__slots__`` at
+    all. Any subclass storing its state in ``__slots__`` -- a common,
+    memory-conscious pattern for ``LinearOperator`` subclasses -- silently
+    loses that state on every pickle/unpickle round-trip. No error is
+    raised at pickle time; the failure only surfaces later, wherever the
+    first dropped attribute happens to get accessed (which can be
+    arbitrarily far from the pickling site, e.g. inside a
+    multiprocessing/joblib worker process). This has been reported
+    upstream; see docs/known_issues.md for the tracking link.
+
+    Separately, on Python >= 3.11 with scipy < 1.18.0 (i.e. no
+    ``LinearOperator.__getstate__`` at all), the default
+    ``object.__getstate__()`` kicks in instead, which -- whenever the
+    instance has ``__slots__`` -- returns a
+    ``(dict_state_or_None, slots_state_or_None)`` TUPLE rather than a dict.
+    That form already correctly captures slot state on its own, but has a
+    different shape that must be handled explicitly too, or code written
+    only against the scipy>=1.18 shape will break on older scipy.
+
+    This class normalizes both cases into one consistent implementation, so
+    subclasses just inherit from it in place of ``LinearOperator`` directly
+    and never have to think about this again.
+
+    Usage
+    -----
+    Replace::
+
+        class Foo(LinearOperator, ...):
+            ...
+
+    with::
+
+        class Foo(PickleSafeLinearOperator, ...):
+            ...
+
+    No other changes needed. Works whether ``Foo`` declares its own
+    ``__slots__`` or not, whether it has multiple bases, and whether
+    ``Foo`` (or anything else in its MRO) also has a ``__dict__``.
+
+    Examples
+    --------
+    >>> import copy
+    >>> import numpy as np
+    >>> class Diagonal(PickleSafeLinearOperator):
+    ...     __slots__ = ["_d"]
+    ...     def __init__(self, d):
+    ...         self._d = np.asarray(d, dtype=np.float64)
+    ...         super().__init__(dtype=self._d.dtype, shape=(len(d),) * 2)
+    ...     def _matvec(self, x):
+    ...         return self._d * x
+    >>> op = Diagonal([1.0, 2.0, 3.0])
+    >>> op2 = copy.deepcopy(op)  # exercises __getstate__/__setstate__, same
+    ...                          # as pickle.dumps/loads would, without the
+    ...                          # doctest-specific issue of pickle needing
+    ...                          # to look up a docstring-local class by its
+    ...                          # module path
+    >>> op2.matvec(np.ones(3))
+    array([1., 2., 3.])
+    """
+
+    __slots__: list = []
+
+    def __getstate__(self) -> dict:
+        base_getstate = getattr(super(), "__getstate__", None)
+        raw = base_getstate() if base_getstate is not None else None
+
+        state: dict = {}
+        if isinstance(raw, tuple):
+            # object.__getstate__()'s default form when __slots__ is
+            # present: (dict_state_or_None, slots_state_or_None).
+            dict_part, slots_part = raw
+            if dict_part:
+                state.update(dict_part)
+            if slots_part:
+                for slot_name, slot_value in slots_part.items():
+                    state[f"__slot__{slot_name}"] = slot_value
+        elif raw:
+            # e.g. scipy>=1.18's LinearOperator.__getstate__: a plain dict,
+            # __dict__ only.
+            state.update(raw)
+
+        # Add every __slots__ attribute declared anywhere in the MRO that
+        # isn't already accounted for above (harmless to re-add ones that
+        # are, since the value is identical either way).
+        for klass in type(self).__mro__:
+            for slot in getattr(klass, "__slots__", ()) or ():
+                if slot in ("__dict__", "__weakref__"):
+                    continue
+                if hasattr(self, slot):
+                    state[f"__slot__{slot}"] = getattr(self, slot)
+        return state
+
+    def __setstate__(self, state) -> None:
+        if isinstance(state, tuple):
+            dict_part, slots_part = state
+            merged: dict = {}
+            if dict_part:
+                merged.update(dict_part)
+            if slots_part:
+                for slot_name, slot_value in slots_part.items():
+                    merged[f"__slot__{slot_name}"] = slot_value
+            state = merged
+
+        slot_items = {
+            k[len("__slot__") :]: v
+            for k, v in state.items()
+            if k.startswith("__slot__")
+        }
+        dict_state = {k: v for k, v in state.items() if not k.startswith("__slot__")}
+
+        base_setstate = getattr(super(), "__setstate__", None)
+        if base_setstate is not None:
+            try:
+                base_setstate(dict_state)
+            except TypeError:
+                if dict_state and hasattr(self, "__dict__"):
+                    self.__dict__.update(dict_state)
+        elif dict_state and hasattr(self, "__dict__"):
+            self.__dict__.update(dict_state)
+
+        for slot, value in slot_items.items():
+            setattr(self, slot, value)
+
+
+class SparseCholeskyFactor(_PickleSafeLinearOperator):
     r"""
     Sparse Cholesky factor of a matrix :math:`\mathbf{A}`.
 
