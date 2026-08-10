@@ -1847,6 +1847,16 @@ class CovKernelAsLinop(abc.ABC, _PickleSafeLinearOperator):
         """Return the number of points covered."""
         return np.shape(self._pts)[0]
 
+    @property
+    def shape(self) -> Tuple[int, int]:
+        """Shape of the covariance matrix (n, n)."""
+        return (self.n_pts, self.n_pts)
+
+    @shape.setter
+    def shape(self, value: Tuple[int, int]) -> None:
+        """Shape of the covariance matrix (n, n)."""
+        pass
+
     def todense(self) -> NDArrayFloat:
         """
         Explicit dense representation of the covariance matrix.

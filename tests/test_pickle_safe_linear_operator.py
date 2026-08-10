@@ -9,6 +9,7 @@ from __future__ import annotations
 import builtins
 import copy
 import pickle
+from typing import Tuple
 
 import covmats._sparse_helpers as sh
 import numpy as np
@@ -35,6 +36,16 @@ class _Leaf(_PickleSafeLinearOperator):
 
     def _matvec(self, x):
         return self._a * x
+
+    @property
+    def shape(self) -> Tuple[int, int]:
+        """Shape of the covariance matrix (n, n)."""
+        return (len(self._a), len(self._a))
+
+    @shape.setter
+    def shape(self, value: Tuple[int, int]) -> None:
+        """Shape of the covariance matrix (n, n)."""
+        pass
 
 
 class _Mid(_PickleSafeLinearOperator):
