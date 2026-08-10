@@ -1835,6 +1835,7 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
         self.solvematvecs: int = 0
 
         super().__init__(shape=(self.n_pts, self.n_pts), dtype="d")
+        self.dtype = np.dtype("d")  # float64 for LinearOperator
 
         if is_use_preconditioner:
             self._preconditioner: Optional[csr_array] = _build_kernel_preconditioner(

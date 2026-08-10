@@ -14,7 +14,7 @@ def load_precision_example_4225x() -> sp.sparse.csc_array:
     ) as f:
         try:
             return sp.io.mmread(f, spmatrix=False).tocsc()
-        except AttributeError:
+        except TypeError:
             # Older scipy versions
             return sp.io.mmread(f).tocsc()
 
@@ -39,7 +39,7 @@ def load_precision_example_4225x_SCF() -> SparseCholeskyFactor:
             sp.io.mmread(D, spmatrix=False).tocsc(),
             P,
         )
-    except AttributeError:
+    except TypeError:
         # Older scipy versions
         return SparseCholeskyFactor(
             sp.io.mmread(L).tocsc(),
