@@ -1785,8 +1785,8 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
         "_nugget",
         "_len_scale",
         "_preconditioner",
-        "_dtype",
         "count",
+        "dtype",
         "solvematvecs",
     ]
 
