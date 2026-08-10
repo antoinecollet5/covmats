@@ -2,6 +2,12 @@
 Changelog
 ==============
 
+0.3.2 (2026-08-10)
+------------------
+
+* FIX: implement `_PickleSafeLinearOperator`, a `LinearOperator`` subclass whose pickling
+  correctly preserves state stored in `__slots__`, on every scipy/Python version.
+
 0.3.1 (2026-08-09)
 ------------------
 
