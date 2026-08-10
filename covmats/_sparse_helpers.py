@@ -22,35 +22,25 @@ _fact_ds = (
 
 class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
     """
-    A LinearOperator subclass whose pickling correctly preserves state
-    stored in __slots__, on every scipy/Python version.
+    A LinearOperator subclass whose pickling correctly preserves state stored in
+    __slots__, on every scipy/Python version.
 
     Background
     ----------
-    scipy >= 1.18.0 added ``LinearOperator.__getstate__``, which serializes
-    only ``self.__dict__`` (apparently to make the new Array API namespace
-    reference ``_xp`` picklable) and has no awareness of ``__slots__`` at
-    all. Any subclass storing its state in ``__slots__`` -- a common,
-    memory-conscious pattern for ``LinearOperator`` subclasses -- silently
-    loses that state on every pickle/unpickle round-trip. No error is
-    raised at pickle time; the failure only surfaces later, wherever the
-    first dropped attribute happens to get accessed (which can be
-    arbitrarily far from the pickling site, e.g. inside a
-    multiprocessing/joblib worker process). This has been reported
-    upstream; see docs/known_issues.md for the tracking link.
+    scipy >= 1.18.0 added ``LinearOperator.__getstate__``, which serializes only
+    ``self.__dict__`` (apparently to make the new Array API namespace reference
+    ``_xp`` picklable) and has no awareness of ``__slots__`` at all. Any subclass
+    storing its state in ``__slots__`` -- a common, memory-conscious pattern for
+    ``LinearOperator`` subclasses -- silently loses that state on every pickle/unpickle
+    round-trip. No error is raised at pickle time; the failure only surfaces later,
+    wherever the first dropped attribute happens to get accessed (which can be
+    arbitrarily far from the pickling site, e.g. inside a multiprocessing/joblib
+    worker process). This has been reported upstream;
+    see https://github.com/scipy/scipy/issues/25871.
 
-    Separately, on Python >= 3.11 with scipy < 1.18.0 (i.e. no
-    ``LinearOperator.__getstate__`` at all), the default
-    ``object.__getstate__()`` kicks in instead, which -- whenever the
-    instance has ``__slots__`` -- returns a
-    ``(dict_state_or_None, slots_state_or_None)`` TUPLE rather than a dict.
-    That form already correctly captures slot state on its own, but has a
-    different shape that must be handled explicitly too, or code written
-    only against the scipy>=1.18 shape will break on older scipy.
-
-    This class normalizes both cases into one consistent implementation, so
-    subclasses just inherit from it in place of ``LinearOperator`` directly
-    and never have to think about this again.
+    This class normalizes this issue in one consistent implementation, so subclasses
+    just inherit from it in place of ``LinearOperator`` directly and never have to
+    think about this again.
 
     Usage
     -----
@@ -61,18 +51,18 @@ class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
 
     with::
 
-        class Foo(PickleSafeLinearOperator, ...):
+        class Foo(_PickleSafeLinearOperator, ...):
             ...
 
-    No other changes needed. Works whether ``Foo`` declares its own
-    ``__slots__`` or not, whether it has multiple bases, and whether
-    ``Foo`` (or anything else in its MRO) also has a ``__dict__``.
+    No other changes needed. Works whether ``Foo`` declares its own ``__slots__`` or
+    not, whether it has multiple bases, and whether ``Foo``
+    (or anything else in its MRO) also has a ``__dict__``.
 
     Examples
     --------
     >>> import copy
     >>> import numpy as np
-    >>> class Diagonal(PickleSafeLinearOperator):
+    >>> class Diagonal(_PickleSafeLinearOperator):
     ...     __slots__ = ["_d"]
     ...     def __init__(self, d):
     ...         self._d = np.asarray(d, dtype=np.float64)
@@ -80,11 +70,7 @@ class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
     ...     def _matvec(self, x):
     ...         return self._d * x
     >>> op = Diagonal([1.0, 2.0, 3.0])
-    >>> op2 = copy.deepcopy(op)  # exercises __getstate__/__setstate__, same
-    ...                          # as pickle.dumps/loads would, without the
-    ...                          # doctest-specific issue of pickle needing
-    ...                          # to look up a docstring-local class by its
-    ...                          # module path
+    >>> op2 = copy.deepcopy(op)
     >>> op2.matvec(np.ones(3))
     array([1., 2., 3.])
     """
@@ -97,8 +83,8 @@ class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
 
         state: dict = {}
         if isinstance(raw, tuple):
-            # object.__getstate__()'s default form when __slots__ is
-            # present: (dict_state_or_None, slots_state_or_None).
+            # object.__getstate__()'s default form when __slots__ is present:
+            # (dict_state_or_None, slots_state_or_None).
             dict_part, slots_part = raw
             if dict_part:
                 state.update(dict_part)
@@ -110,9 +96,9 @@ class _PickleSafeLinearOperator(sp.sparse.linalg.LinearOperator):
             # __dict__ only.
             state.update(raw)
 
-        # Add every __slots__ attribute declared anywhere in the MRO that
-        # isn't already accounted for above (harmless to re-add ones that
-        # are, since the value is identical either way).
+        # Add every __slots__ attribute declared anywhere in the MRO that isn't already
+        # accounted for above (harmless to re-add ones that are, since the value is
+        # identical either way).
         for klass in type(self).__mro__:
             for slot in getattr(klass, "__slots__", ()) or ():
                 if slot in ("__dict__", "__weakref__"):
