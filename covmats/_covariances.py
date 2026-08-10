@@ -1757,7 +1757,7 @@ def _generate_dense_matrix_from_kernel(
     scaled_pts = np.array(pts, copy=True)
     for dim in range(scaled_pts.shape[1]):
         scaled_pts[:, dim] /= len_scale[dim]
-    return kernel(sp.spatial.distance_matrix(scaled_pts, scaled_pts))
+    return kernel(sp.spatial.distance.cdist(scaled_pts, scaled_pts))
 
 
 class CovKernelAsLinop(abc.ABC, _PickleSafeLinearOperator):

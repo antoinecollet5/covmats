@@ -12,7 +12,7 @@ def load_precision_example_4225x() -> sp.sparse.csc_array:
         .joinpath("precision_example_4225x.mtx")
         .open("rb")
     ) as f:
-        return sp.io.mmread(f).tocsc()
+        return sp.io.mmread(f, spmatrix=False).tocsc()
 
 
 def load_precision_example_4225x_SCF() -> SparseCholeskyFactor:
@@ -29,4 +29,8 @@ def load_precision_example_4225x_SCF() -> SparseCholeskyFactor:
     P = np.loadtxt(
         resources.files("covmats.data").joinpath("precision_example_4225x_P.txt")  # ty:ignore[invalid-argument-type]
     )
-    return SparseCholeskyFactor(sp.io.mmread(L).tocsc(), sp.io.mmread(D).tocsc(), P)
+    return SparseCholeskyFactor(
+        sp.io.mmread(L, spmatrix=False).tocsc(),
+        sp.io.mmread(D, spmatrix=False).tocsc(),
+        P,
+    )
