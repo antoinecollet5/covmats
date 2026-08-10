@@ -34,6 +34,7 @@ This file has two jobs:
 
 from __future__ import annotations
 
+import multiprocessing as mp
 import pickle
 from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, Tuple, Union
@@ -292,7 +293,9 @@ def test_pickle_across_process_pool(name, factory) -> None:
     cov_ref, _ = factory()
     ref_result = _solve_or_matvec(cov_ref, b)
 
-    with ProcessPoolExecutor(max_workers=2) as executor:
+    with ProcessPoolExecutor(
+        max_workers=2, mp_context=mp.get_context("spawn")
+    ) as executor:
         # Submit more tasks than workers, so the same object gets pickled
         # and dispatched multiple times -- this is the shape that originally
         # surfaced the bug (multiple batches sharing one covariance object).
