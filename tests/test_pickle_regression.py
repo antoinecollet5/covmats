@@ -181,10 +181,6 @@ def _assert_slot_value_preserved(name: str, slot: str, value, value2) -> None:
             value2, value, err_msg=f"{name}: slot '{slot}' changed after pickling"
         )
     elif sp.sparse.issparse(value):
-        # Sparse arrays' `==` returns an elementwise sparse array, not a
-        # bool -- densify for comparison. Fixture sizes here are small
-        # enough that this is fine for a test; not something you'd do on
-        # production-sized matrices.
         np.testing.assert_allclose(
             value2.toarray(),
             value.toarray(),
