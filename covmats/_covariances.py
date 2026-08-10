@@ -1760,7 +1760,7 @@ def _generate_dense_matrix_from_kernel(
     return kernel(sp.spatial.distance.cdist(scaled_pts, scaled_pts))
 
 
-class CovKernelAsLinop(abc.ABC, _PickleSafeLinearOperator):
+class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
     """
     Abstract class providing linear operator capability from a kernel definition.
 
@@ -1785,6 +1785,7 @@ class CovKernelAsLinop(abc.ABC, _PickleSafeLinearOperator):
         "_nugget",
         "_len_scale",
         "_preconditioner",
+        "_dtype",
         "count",
         "solvematvecs",
     ]
