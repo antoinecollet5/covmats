@@ -10,5 +10,6 @@ The following tutorials allow you to get started and explore the possibilities o
 
    Covariances <notebooks/examples_covariances>
    Priors <notebooks/examples_priors>
+   Simulations <notebooks/examples_simulations>
 
 * :ref:`genindex`

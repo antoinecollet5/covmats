@@ -73,6 +73,7 @@ docs: ## generate Sphinx HTML documentation, including API docs
 	rm -fr docs/sources/_autosummary/
 	marimo export ipynb notebooks/examples_covariances.py -o notebooks/examples_covariances.ipynb --sort=top-down
 	marimo export ipynb notebooks/examples_priors.py -o notebooks/examples_priors.ipynb --sort=top-down
+	marimo export ipynb notebooks/examples_simulations.py -o notebooks/examples_simulations.ipynb --sort=top-down
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
 	$(BROWSER) docs/build/html/index.html

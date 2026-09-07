@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+__marimo__/
 *.py[cod]
 *$py.class
 
@@ -122,9 +123,3 @@ test-output.xml
 
 # for the documentation
 _autosummary/
-
-# Some specific folders
-**/exported_figures/
-**/HM_RESULTS/
-examples/articles/gd_gan/wgan_both_2202_b.pt
-examples/articles/gd_gan/iswgan_conditioner_b.pt
