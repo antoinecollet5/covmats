@@ -64,8 +64,8 @@ def make_point_observation_operator(indices: ArrayLike, n: int) -> LinearOperato
         raise ValueError("`indices` must contain at least one element!")
     if np.any(_indices < 0) or np.any(_indices >= n):
         raise ValueError(
-            f"All `indices` must be in [0, {n}), got min={_indices.min()}, "
-            f"max={_indices.max()}!"
+            f"All `indices` must be in [0, {n}), got min={np.min(_indices)}, "
+            f"max={np.max(_indices)}!"
         )
     n_obs = _indices.size
 
