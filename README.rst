@@ -231,7 +231,12 @@ trend as `m = X @ beta`:
 
     (36,)
 
-🏗️ Complete example with supporting paper coming Q1 2026.
+Conditional and unconditional simulations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+See `https://github.com/antoinecollet5/covmats/blob/main/notebooks/examples_simulations.ipynb <https://github.com/antoinecollet5/covmats/blob/main/notebooks/examples_simulations.ipynb>`_
+
+🏗️ Complete example with supporting paper coming Q1 2027.
 
 ===========
 🔑 License

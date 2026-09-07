@@ -2,6 +2,29 @@
 Changelog
 ==============
 
+0.4.0 (2026-09-07)
+------------------
+
+* ENH: add conditional Gaussian simulation on top of any `CovarianceMatrix` (or
+  matrix-free operator exposing `matvec`/`colorize`): `covmats.conditional_simulate`
+  and `covmats.conditional_mean` implement Matheron's rule / pathwise conditioning,
+  producing exact realizations and the kriging mean from noisy point (or general
+  linear) observations with per-observation or correlated uncertainty, without ever
+  forming or factorizing the posterior covariance. `covmats.make_point_observation_operator`
+  builds the observation operator for the common case of point data at
+  discretization nodes.
+* ENH: `conditional_simulate`/`conditional_mean` accept a `solver` argument.
+  `solver="cg"` (default) is fully matrix-free and scales to arbitrarily large
+  numbers of observations. `solver="direct"` assembles and Cholesky-factors the
+  dense `(n_obs, n_obs)` observation-space system once, then solves every
+  realization in a single vectorized call, removing the per-realization Python
+  loop entirely; typically much faster whenever the number of observations is
+  small to moderate compared to the field size.
+* DOC: added the `conditional_simulation_tutorial` notebook, demonstrating
+  unconditional simulation, conditioning on noisy point observations, and the
+  convergence of the conditional mean to the true field as more observations
+  are added.
+
 0.3.2 (2026-08-10)
 ------------------
 
