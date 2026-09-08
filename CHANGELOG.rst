@@ -2,6 +2,12 @@
 Changelog
 ==============
 
+
+0.5.0 (2026-09-08)
+------------------
+
+* ENH: add `colorize_adjoint` methods to all CovarianceMatrix derived classes.
+
 0.4.0 (2026-09-07)
 ------------------
 
