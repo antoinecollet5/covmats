@@ -105,6 +105,39 @@ def test_SparseCholeskyFactor() -> None:
     np.testing.assert_allclose(np.linalg.slogdet(A.toarray())[1], scf.log_pdet)
 
 
+def test_SparseCholeskyFactor_colorize_adjoint() -> None:
+
+    A = get_SPD_sparse_n11_example(seed=2026)
+    scf = SparseCholeskyFactor(*_get_L_D_P(A))
+
+    rng = np.random.default_rng(2028)
+    n = scf.n_pts
+    x = rng.standard_normal(n)
+    y = rng.standard_normal(n)
+
+    # colorize_adjoint is the adjoint of colorize: <colorize(x), y> == <x,
+    # colorize_adjoint(y)>
+    np.testing.assert_allclose(
+        scf.colorize(x[None, :])[0] @ y, x @ scf.colorize_adjoint(y[None, :])[0]
+    )
+
+    # colorize_inv_adjoint is the adjoint of colorize_inv
+    np.testing.assert_allclose(
+        scf.colorize_inv(x[None, :])[0] @ y,
+        x @ scf.colorize_inv_adjoint(y[None, :])[0],
+    )
+
+    # same checks, batched
+    X = rng.standard_normal((4, n))
+    Y = rng.standard_normal((4, n))
+    np.testing.assert_allclose(
+        np.sum(scf.colorize(X) * Y), np.sum(X * scf.colorize_adjoint(Y))
+    )
+    np.testing.assert_allclose(
+        np.sum(scf.colorize_inv(X) * Y), np.sum(X * scf.colorize_inv_adjoint(Y))
+    )
+
+
 def test_assert_allclose_sparse() -> None:
     L = sp.sparse.csc_array([[1.0, 0.0, 0.1], [0.1, 1.2, 0.0], [0.0, 0.0, 1.5]])
     A = L.T @ L

@@ -227,6 +227,9 @@ class _StubCovarianceMatrix(CovarianceMatrix):
     def _colorize(self, x):
         raise NotImplementedError
 
+    def _colorize_adjoint(self, y):
+        raise NotImplementedError
+
 
 class _NoColorizeNoSubspace(_StubCovarianceMatrix):
     """A duck-typed operator with neither `colorize` nor `subspace_size`."""

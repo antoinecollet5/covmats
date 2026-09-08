@@ -38,6 +38,28 @@ def _get_L_D_P(A: sp.sparse.sparray):
     return L, D, P
 
 
+def _check_colorize_adjoint(cov, seed: int = 0) -> None:
+    """
+    Check that `cov.colorize_adjoint` is indeed the adjoint of `cov.colorize`.
+
+    i.e. that <colorize(x), y> == <x, colorize_adjoint(y)> for random x, y,
+    both unbatched and batched.
+    """
+    rng = np.random.default_rng(seed)
+    d = cov.subspace_size
+    n = cov.n_pts
+
+    x = rng.standard_normal(d)
+    y = rng.standard_normal(n)
+    np.testing.assert_allclose(cov.colorize(x) @ y, x @ cov.colorize_adjoint(y))
+
+    X = rng.standard_normal((4, d))
+    Y = rng.standard_normal((4, n))
+    np.testing.assert_allclose(
+        np.sum(cov.colorize(X) * Y), np.sum(X * cov.colorize_adjoint(Y))
+    )
+
+
 v3 = np.array([3.0, 1.0, 8.0])
 V34 = np.vstack([v3] * 4).T
 assert np.shape(V34) == (3, 4)
@@ -284,6 +306,11 @@ def test_CovViaDiagonal_mvnormal() -> None:
     assert x.shape == (2, 4, 3)
 
 
+def test_CovViaDiagonal_colorize_adjoint() -> None:
+    cov = covmats.CovViaDiagonal(np.array([5.0, 10.0, 15.0]))
+    _check_colorize_adjoint(cov)
+
+
 def test_CovViaCholesky_log_stats() -> None:
 
     rng = np.random.default_rng(2026)
@@ -374,6 +401,15 @@ def test_CovViaCholesky_mvnormal() -> None:
     assert x.shape == (2, 4, 3)
 
 
+def test_CovViaCholesky_colorize_adjoint() -> None:
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T + n * np.eye(n)  # make it strongly positive definite
+    cov = covmats.CovViaCholesky(np.linalg.cholesky(A))
+    _check_colorize_adjoint(cov)
+
+
 @pytest.mark.parametrize("is_embbed_covariance", (True, False))
 def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
 
@@ -423,6 +459,33 @@ def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
 
     # Logdet
     np.testing.assert_allclose(np.linalg.slogdet(A.toarray())[1], cov.log_pdet)
+
+
+@pytest.mark.parametrize("is_embbed_covariance", (True, False))
+def test_CovViaSparseCholesky_colorize_adjoint(is_embbed_covariance: bool) -> None:
+    A = get_SPD_sparse_n11_example(seed=2026)
+    cov = covmats.CovViaSparseCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(A)),
+        sparse_covariance=A if is_embbed_covariance else None,
+    )
+    _check_colorize_adjoint(cov)
+
+
+def test_CovViaSparseCholesky_colorize_adjoint_not_implemented(monkeypatch) -> None:
+    A = get_SPD_sparse_n11_example(seed=2026)
+    cov = covmats.CovViaSparseCholesky(covmats.SparseCholeskyFactor(*_get_L_D_P(A)))
+    # simulate an older `covmats` where `SparseCholeskyFactor` does not (yet)
+    # expose `colorize_adjoint`
+    monkeypatch.delattr(covmats.SparseCholeskyFactor, "colorize_adjoint")
+    with pytest.raises(
+        NotImplementedError,
+        match=re.escape(
+            "CovViaSparseCholesky.colorize_adjoint requires "
+            "`SparseCholeskyFactor.colorize_adjoint`, which is not "
+            "implemented yet. See the method docstring."
+        ),
+    ):
+        cov.colorize_adjoint(np.ones(11))
 
 
 @pytest.mark.parametrize("is_embbed_precision", (True, False))
@@ -499,6 +562,15 @@ def test_CovViaPrecisionCholesky_whiten() -> None:
     np.testing.assert_allclose(np.cov(x_, rowvar=False), np.eye(3), atol=0.01)
 
 
+def test_CovViaPrecisionCholesky_colorize_adjoint() -> None:
+    rng = np.random.default_rng(2026)
+    n = 5
+    P = rng.random(size=(n, n))
+    Q = P @ P.T + n * np.eye(n)  # a precision matrix must be positive definite
+    cov = covmats.CovViaPrecisionCholesky(np.linalg.cholesky(Q))
+    _check_colorize_adjoint(cov)
+
+
 def test_ensemble_covariance_matrix() -> None:
     """Test the inversion."""
 
@@ -557,6 +629,18 @@ def test_CovViaSparsePrecisionCholesky(is_embbed_precision: bool) -> None:
     )
 
     np.testing.assert_allclose(np.linalg.slogdet(A)[1], cov.log_pdet)
+
+
+@pytest.mark.parametrize("is_embbed_precision", (True, False))
+def test_CovViaSparsePrecisionCholesky_colorize_adjoint(
+    is_embbed_precision: bool,
+) -> None:
+    Q = get_SPD_sparse_n11_example(seed=2026)
+    cov = covmats.CovViaSparsePrecisionCholesky(
+        covmats.SparseCholeskyFactor(*_get_L_D_P(Q)),
+        sparse_precision=Q if is_embbed_precision else None,
+    )
+    _check_colorize_adjoint(cov)
 
 
 def test_build_kernel_preconditioner() -> None:
@@ -770,6 +854,16 @@ def test_negative_eigen_values() -> None:
     assert cov_mat_eigen.eig_vects.size == 8
 
 
+def test_CovViaEigenFactorization_colorize_adjoint() -> None:
+    rng = np.random.default_rng(2026)
+    n = 5
+    A = rng.random(size=(n, n))
+    A = A @ A.T + n * np.eye(n)
+    w, v = np.linalg.eigh(A)
+    cov = covmats.CovViaEigenFactorization((w, v))
+    _check_colorize_adjoint(cov)
+
+
 def test_CovViaEnsemble_0() -> None:
 
     rng = np.random.default_rng(2026)
@@ -807,6 +901,14 @@ def test_CovViaEnsemble_0() -> None:
 
     # Get precision matrix (inverse)
     np.testing.assert_allclose(np.linalg.inv(A), cov_ens.precision, rtol=0.05)
+
+
+def test_CovViaEnsemble_colorize_adjoint() -> None:
+    rng = np.random.default_rng(2026)
+    n = 6
+    ens = rng.standard_normal((10, n))  # ne < n -> low-rank subspace_size < n
+    cov = covmats.CovViaEnsemble(ens)
+    _check_colorize_adjoint(cov)
 
 
 def test_CovViaEnsemble_1() -> None:

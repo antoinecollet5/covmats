@@ -535,6 +535,55 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         """
         return self.apply_Pt(self.L @ self.sqrtD @ x.T).T
 
+    def colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Perform the adjoint (transpose) of :py:meth:`SparseCholeskyFactor.colorize`.
+
+        Parameters
+        ----------
+        y : array_like
+            An array of points in data space, with the last dimension equal
+            to :py:attr:`n_pts`.
+
+        Returns
+        -------
+        y_ : array_like
+            The transformed array, same shape as `y`.
+
+        Note
+        ----
+        Writing :py:meth:`colorize` as the linear map
+        :math:`\mathrm{colorize}(x) = \mathbf{P}^{T} \mathbf{L} \mathbf{D}^{1/2} x`
+        (with :math:`\mathbf{P}` the permutation matrix such that
+        :py:meth:`apply_P` computes :math:`\mathbf{P} x`, so that
+        :py:meth:`apply_Pt` computes :math:`\mathbf{P}^{T} x`), its adjoint is
+        :math:`\mathrm{colorize}^{T}(y) = \mathbf{D}^{1/2} \mathbf{L}^{T}
+        \mathbf{P} y`, obtained here as
+        ``sqrtD @ (L.T @ apply_P(y))`` -- no triangular solve needed, unlike
+        :py:meth:`colorize_inv_adjoint`.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import scipy as sp
+        >>> import covmats
+        >>> rng = np.random.default_rng(0)
+        >>> n = 4
+        >>> B = rng.random(size=(n, n))
+        >>> cov_array = B @ B.T + n * np.eye(n)
+        >>> L, D, P = sp.linalg.ldl(cov_array)
+        >>> scf = covmats.SparseCholeskyFactor(
+        ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+        ... )
+        >>> x = rng.standard_normal(n)
+        >>> y = rng.standard_normal(n)
+        >>> np.allclose(
+        ...     scf.colorize(x[None, :])[0] @ y, x @ scf.colorize_adjoint(y[None, :])[0]
+        ... )
+        True
+        """
+        return (self.sqrtD @ (self.L.T @ self.apply_P(y.T))).T
+
     def colorize_inv(self, x: NDArrayFloat) -> NDArrayFloat:
         r"""
         Perform a colorizing transformation on data as in
@@ -546,6 +595,60 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
                 self.L.T, self.sqrtinvD @ x.T, unit_diagonal=True, lower=False
             )
         ).T
+
+    def colorize_inv_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Perform the adjoint (transpose) of :py:meth:`SparseCholeskyFactor.colorize_inv`.
+
+        Parameters
+        ----------
+        y : array_like
+            An array of points in data space, with the last dimension equal
+            to :py:attr:`n_pts`.
+
+        Returns
+        -------
+        y_ : array_like
+            The transformed array, same shape as `y`.
+
+        Note
+        ----
+        Writing :py:meth:`colorize_inv` as the linear map
+        :math:`\mathrm{colorize\_inv}(x) = \mathbf{P}^{T} \mathbf{L}^{-T}
+        \mathbf{D}^{-1/2} x` (:py:meth:`colorize_inv` solves
+        :math:`\mathbf{L}^{T} z = \mathbf{D}^{-1/2} x` then applies
+        :math:`\mathbf{P}^{T}`), its adjoint is
+        :math:`\mathrm{colorize\_inv}^{T}(y) = \mathbf{D}^{-1/2}
+        \mathbf{L}^{-1} \mathbf{P} y`, obtained here by forward-solving
+        :math:`\mathbf{L} z = \mathbf{P} y` (lower-triangular, unlike the
+        backward solve used by :py:meth:`colorize_inv` itself) and then
+        applying ``sqrtinvD``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import scipy as sp
+        >>> import covmats
+        >>> rng = np.random.default_rng(0)
+        >>> n = 4
+        >>> B = rng.random(size=(n, n))
+        >>> cov_array = B @ B.T + n * np.eye(n)
+        >>> L, D, P = sp.linalg.ldl(cov_array)
+        >>> scf = covmats.SparseCholeskyFactor(
+        ...     sp.sparse.csc_array(L), sp.sparse.csc_array(D), P
+        ... )
+        >>> x = rng.standard_normal(n)
+        >>> y = rng.standard_normal(n)
+        >>> np.allclose(
+        ...     scf.colorize_inv(x[None, :])[0] @ y,
+        ...     x @ scf.colorize_inv_adjoint(y[None, :])[0],
+        ... )
+        True
+        """
+        z = sp.sparse.linalg.spsolve_triangular(
+            self.L, self.apply_P(y.T), unit_diagonal=True, lower=True
+        )
+        return (self.sqrtinvD @ z).T
 
     def whiten(self, x: NDArrayFloat) -> NDArrayFloat:
         """

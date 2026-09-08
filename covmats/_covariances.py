@@ -373,6 +373,62 @@ class CovarianceMatrix(_PickleSafeLinearOperator, sp.stats.Covariance, abc.ABC):
         """
         return self._colorize(np.asarray(x))
 
+    @abc.abstractmethod
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """Perform the adjoint (transpose) of the colorizing transformation."""
+        ...
+
+    def colorize_adjoint(self, y):
+        r"""
+        Perform the adjoint (transpose) of the colorizing transformation.
+
+        If ``colorize(x) = L @ x`` (writing the colorizer as a linear map
+        :math:`L` from white-noise space, dimension :py:attr:`subspace_size`,
+        to data space, dimension :py:attr:`n_pts`), this returns
+        :math:`L^T y`. It never squares or inverts the transform: this is
+        `not` the whitening operation, and it is generally *not* equal to
+        ``colorize`` even when `L` is square (unless `L` happens to be
+        symmetric), since colorize is typically triangular, orthogonal-like,
+        or a rectangular low-rank factor rather than symmetric.
+
+        This is primarily useful for backpropagating gradients through a
+        colorizing transform, e.g. when `x` (or a deterministic function of
+        it, such as a gradual-deformation combination of several white
+        noises) is itself the result of an upstream computation being
+        differentiated: if ``field = cov.colorize(x)`` and ``grad_field`` is
+        the gradient of some objective w.r.t. `field`, then
+        ``cov.colorize_adjoint(grad_field)`` is the gradient of that
+        objective w.r.t. `x`.
+
+        Parameters
+        ----------
+        y : array_like
+            An array of points in data space. The last dimension must equal
+            :py:attr:`n_pts`.
+
+        Returns
+        -------
+        y_ : array_like
+            The transformed array, with its last dimension equal to
+            :py:attr:`subspace_size`.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import covmats
+        >>> rng = np.random.default_rng(0)
+        >>> n = 4
+        >>> A = rng.random(size=(n, n))
+        >>> cov_array = A @ A.T + n * np.eye(n)
+        >>> L = np.linalg.cholesky(cov_array)
+        >>> cov = covmats.CovViaCholesky(L)
+        >>> x = rng.standard_normal(n)
+        >>> y = rng.standard_normal(n)
+        >>> np.allclose(cov.colorize(x) @ y, x @ cov.colorize_adjoint(y))
+        True
+        """
+        return self._colorize_adjoint(np.asarray(y))
+
     def sample_mvnormal(
         self,
         shape: Sequence[int],
@@ -685,6 +741,16 @@ class CovViaDiagonal(CovarianceMatrix):
         """
         return _dot_diag(x, self.sqrtD)
 
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        The colorizer is the diagonal (hence symmetric) matrix
+        ``diag(sqrtD)``, so it is self-adjoint: this is identical to
+        :py:meth:`CovViaDiagonal._colorize`.
+        """
+        return _dot_diag(y, self.sqrtD)
+
     def _todense(self) -> NDArrayFloat:
         return np.apply_along_axis(np.diag, -1, self.D)
 
@@ -835,6 +901,15 @@ class CovViaCholesky(CovarianceMatrix):
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return x @ self.L.T
 
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        ``colorize(x) = x @ L.T`` (i.e. ``L @ x`` for a single vector), so
+        its adjoint is ``y @ L`` (i.e. ``L.T @ y`` for a single vector).
+        """
+        return y @ self.L
+
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         return sp.linalg.cho_solve((self.L, True), b)
@@ -967,6 +1042,25 @@ class CovViaSparseCholesky(CovarianceMatrix):
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return self.scf.colorize(x)
+
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        Requires `SparseCholeskyFactor.colorize_adjoint` (the transpose of
+        the sparse ``L D^{1/2}`` colorizer, accounting for the fill-reducing
+        permutation `P`), which is not implemented yet in
+        ``covmats._sparse_helpers``. See
+        :py:meth:`CovViaCholesky._colorize_adjoint` for the dense equivalent
+        (``y @ L``) that this should mirror once `scf` exposes it.
+        """
+        if not hasattr(self.scf, "colorize_adjoint"):
+            raise NotImplementedError(
+                "CovViaSparseCholesky.colorize_adjoint requires "
+                "`SparseCholeskyFactor.colorize_adjoint`, which is not "
+                "implemented yet. See the method docstring."
+            )
+        return self.scf.colorize_adjoint(y)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
@@ -1123,6 +1217,19 @@ class CovViaPrecisionCholesky(CovarianceMatrix):
         # L1^T @ b.T = x.T
         return res.reshape(x.T.shape).T
 
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        ``colorize(x)`` solves ``L.T @ z = x``, i.e. ``colorize(x) = L^{-T}
+        x``. Its adjoint is therefore ``(L^{-T})^T = L^{-1}``, obtained here
+        by forward-solving ``L @ z = y`` (lower-triangular, unlike the
+        backward solve used by ``colorize`` itself).
+        """
+        m = y.T.shape[0]
+        res = sp.linalg.solve_triangular(self.L, y.T.reshape(m, -1), lower=True)
+        return res.reshape(y.T.shape).T
+
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         if self._precision is not None:
@@ -1247,6 +1354,18 @@ class CovViaSparsePrecisionCholesky(CovarianceMatrix):
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return self.scf.colorize_inv(x)
+
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        Requires `SparseCholeskyFactor.colorize_inv_adjoint` (the transpose
+        of `scf.colorize_inv`), which is not implemented yet in
+        ``covmats._sparse_helpers``. See
+        :py:meth:`CovViaPrecisionCholesky._colorize_adjoint` for the dense
+        equivalent that this should mirror once `scf` exposes it.
+        """
+        return self.scf.colorize_inv_adjoint(y)
 
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Return x = A^{-1} b."""
@@ -1422,6 +1541,18 @@ class CovViaEigenFactorization(CovarianceMatrix):
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return x @ (self._sqrt_w * self._v.T)
+
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        ``colorize(x) = x @ (sqrt_w * v.T)``, i.e. ``V diag(sqrt_w) x`` for a
+        single vector; its adjoint maps data space (dimension `n_pts`) back
+        to white-noise space (dimension `subspace_size`) via
+        ``diag(sqrt_w) @ V.T @ y``, computed here as
+        ``(y @ v) * sqrt_w``.
+        """
+        return (y @ self._v) * self._sqrt_w.reshape(-1)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -1673,6 +1804,18 @@ class CovViaEnsemble(CovarianceMatrix):
 
     def _colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         return x @ (self._sqrt_w[None, :].T * self._v.T)
+
+    def _colorize_adjoint(self, y: NDArrayFloat) -> NDArrayFloat:
+        """
+        Perform the adjoint of the colorizing transformation.
+
+        ``colorize(x) = x @ (sqrt_w[None, :].T * v.T)``, i.e. ``V diag(sqrt_w)
+        x`` for a single vector; its adjoint maps data space (dimension
+        `n_pts`) back to the low-rank white-noise space (dimension
+        `subspace_size`) via ``diag(sqrt_w) @ V.T @ y``, computed here as
+        ``(y @ v) * sqrt_w``.
+        """
+        return (y @ self._v) * self._sqrt_w
 
     def _todense(self) -> NDArrayFloat:
         """
