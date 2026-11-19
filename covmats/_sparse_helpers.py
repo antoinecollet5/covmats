@@ -667,7 +667,7 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         """
         return self.apply_Pt(
             sp.sparse.linalg.spsolve_triangular(
-                self._L_csr.T, self.sqrtinvD @ x.T, unit_diagonal=True, lower=False
+                self._Lt_csr, self.sqrtinvD @ x.T, unit_diagonal=True, lower=False
             )
         ).T
 
