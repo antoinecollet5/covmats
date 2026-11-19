@@ -3,6 +3,113 @@ Changelog
 ==============
 
 
+0.6.0 (2026-11-13)
+------------------
+
+Bug fixes
+~~~~~~~~~
+
+* FIX: `SparseCholeskyFactor.get_diagonal` ignored the permutation `P` and returned
+  the diagonal of :math:`PAP^T` instead of the diagonal of :math:`A` whenever
+  :math:`P` is not the identity. It is now also computed in O(nnz(L)) without
+  forming :math:`L D L^T`.
+* FIX: `SparseCholeskyFactor.whiten_inv` applied the transposition at the wrong place:
+  it raised a shape error for batches with a number of rows different from `n`, and
+  silently returned a wrong result when the batch was square.
+* FIX: `SparseCholeskyFactor.log_pdet` computed `log(prod(diag(D)))`, which overflows
+  (`inf`) or underflows (`-inf`) for large matrices. It is now `sum(log(diag(D)))`.
+* FIX: `SparseCholeskyFactor` cached properties (`invD`, `sqrtD`, `sqrtinvD`, `Pt`)
+  were never invalidated when `D` or `P` were set again, contrary to what the
+  documentation says. Setting `L`, `D` or `P` now resets everything derived from it.
+* FIX: setting an invalid `L` (not lower triangular, or without unit diagonal) used to
+  leave the instance with the invalid value. The value is now validated before being
+  assigned.
+* FIX: `SparseCholeskyFactor` now checks that `P` is a permutation of `range(n)`.
+  The shape error message mentioned `L` twice instead of `P`.
+* FIX: `assert_allclose_sparse` relied on a bare `assert` for the shape check, which
+  is stripped by `python -O`.
+* FIX: `get_SPD_sparse_example` ignored its `seed` argument (a hard-coded seed of 42
+  was used) and reset the global numpy random state. It now uses a local generator
+  seeded with `seed`. **Matrices generated for a given seed differ from previous
+  versions.**
+* FIX: `CovViaEnsemble` kept stale `anomalies` and `n_ens` when the `ensemble` was
+  assigned a second time, and always reported `rank == 0` and `log_pdet == 0.0`.
+  They are now consistent with `CovViaEigenFactorization` (rank is the number of
+  strictly positive eigenvalues and `log_pdet` the log of their product).
+* FIX: `get_eigen_factorization_gram_matrix_trick` truncation tolerance was at the
+  level of the numerical noise: the null space of centered anomalies (rank
+  :math:`\leq N_e - 1`) could survive as a spurious mode, and the associated
+  eigenvector was obtained by dividing noise by a near-zero singular value.
+  The tolerance now keeps a safety factor of 10.
+* FIX: `CovKernelAsLinop.solve` did not reset the GMRES iteration counter between
+  right-hand sides, so `itercount` over-counted for multiple columns. It also
+  truncated `b` when given as integers, and now emits a `RuntimeWarning` when GMRES
+  does not converge instead of failing silently.
+* FIX: the sparse preconditioner of `CovKernelAsLinop` was built from the raw point
+  coordinates whereas the kernel is evaluated on coordinates scaled by `len_scale`
+  everywhere else. It is now built from the scaled coordinates.
+* FIX: `CovKernelAsLinop.todense` failed for a scalar `len_scale` or integer
+  coordinates, although both are documented as supported.
+* FIX: `toeplitz_product` failed for a 1D grid with a single cell.
+
+Behaviour changes
+~~~~~~~~~~~~~~~~~
+
+* FIX (**breaking**): the `nugget` of `CovKernelAsLinop` and `CovKernelAsLinopViaFFT`
+  is now consistently an *absolute variance added to the diagonal*:
+  :math:`C = K + \tau^2 I`, as documented. Previously `todense`, `get_diagonal` and
+  the preconditioner ignored it, and the FFT matrix-vector product returned
+  :math:`(1 + \tau^2) K` (a rescaling, which neither regularizes nor models a
+  nugget effect), so that `todense`, `@` and `solve` did not describe the same
+  matrix. Results obtained with a non-zero nugget differ from previous versions.
+* ENH: the nugget is handled once, in `CovKernelAsLinop`. A new matrix type only has to
+  override `_kernel_matvec` (:math:`Kx`, without nugget) and, optionally,
+  `_kernel_todense`. `todense`, `get_diagonal`, `solve`, the preconditioner and the
+  `count` matrix-vector counter (now also incremented by the FFT operator) are
+  inherited.
+* ENH: `nugget` must be finite and non-negative (`ValueError` otherwise) and is
+  exposed as the read-only `nugget` property. The smallest eigenvalue of
+  :math:`C` is at least :math:`\tau^2`.
+
+Performance
+~~~~~~~~~~~
+
+* ENH: `CovKernelAsLinopViaFFT` computes the FFT of the circulant embedding once at
+  creation (new `toeplitz_circulant_spectrum` / `toeplitz_product_from_spectrum`
+  helpers) and uses real FFTs: matrix-vector products are about 2.7 times faster
+  (256 x 256 grid: 14 ms -> 5 ms, 48 x 48 x 48 grid: 101 ms -> 39 ms).
+* ENH: `SparseCholeskyFactor.get_invdiagonal` uses blocked multi right-hand side
+  forward solves (a single triangular solve per unit vector instead of a full
+  `solve`), about 6 times faster for n = 1500. The new `block_size` argument bounds
+  the memory.
+* ENH: `SparseCholeskyFactor.get_diagonal` is about 35 times faster (10 000 x 10 000
+  Laplacian: 18.6 ms -> 0.5 ms).
+* ENH: `SparseCholeskyFactor` keeps the CSR copies of `L` and `L^T` required by
+  `scipy.sparse.linalg.spsolve_triangular` and the diagonal of `D` (and its inverse and
+  square roots) as vectors, instead of converting and rebuilding sparse diagonal
+  matrices at each call.
+* ENH: `CovViaEigenFactorization.get_sparse_LLT_factor` is built from a COO array
+  rather than a resized LIL array (about 4 times faster).
+
+New features
+~~~~~~~~~~~~
+
+* ENH: add `sparse_cholesky_superlu`, a sparse
+  :math:`LDL^T = PAP^T` factorization of a symmetric positive definite matrix relying on
+  SuperLU, shipped with SciPy (BSD): it provides a `SparseCholeskyFactor` without
+  the LGPL `scikit-sparse` / SuiteSparse dependency. Fill-reducing orderings
+  (`"amd"`, `"rcm"`, `"natural"` or a user permutation) can be selected, and non
+  positive definite matrices are rejected.
+
+Tests
+~~~~~
+
+* TEST: the test suite no longer requires `scikit-sparse`: when it is missing,
+  the factorizations are obtained with `sparse_cholesky_superlu`.
+* TEST: add `tests/test_v060_regressions.py` covering all the fixes above.
+* TEST: seed the random generator of `test_CovViaPrecisionCholesky`, which failed
+  randomly (about once in 5 000 runs) for ill-conditioned random precision matrices.
+
 0.5.0 (2026-09-08)
 ------------------
 

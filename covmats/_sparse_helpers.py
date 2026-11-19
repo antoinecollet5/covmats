@@ -3,9 +3,8 @@
 
 """Wrap the sparse cholesky factorization from"""
 
-import warnings
 from functools import cached_property
-from typing import Tuple, TypeVar, overload
+from typing import Literal, Tuple, TypeVar, Union, overload
 
 import numpy as np
 import scipy as sp
@@ -204,7 +203,7 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
             If the dimensions of `L`, `D` and `P` do not match.
         """
         # Make sure that is it 1D and integer
-        self.P = np.asarray(P, dtype=np.int64).ravel()
+        self.P = P
         self.D = D
         self.L = L
 
@@ -212,22 +211,48 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         if self.D.shape != self.shape or self.P.size != self.n_pts:
             raise ValueError(
                 f"`L` has shape {self.shape},"
-                f" `D` has shape {D.shape}, and `L` has shape {self.P.shape}!\n"
+                f" `D` has shape {D.shape}, and `P` has shape {self.P.shape}!\n"
                 f"To be consistent, `D` and `P` are expected with shape {self.shape}"
                 f" and ({self.n_pts},) respectively."
             )
 
+        # Also validate that P is a permutation (needs n_pts, hence done here)
+        if not np.array_equal(np.sort(self.P), np.arange(self.n_pts)):
+            raise ValueError("`P` must be a permutation of `range(n)`!")
+
         super().__init__("d", shape=(self.n_pts, self.n_pts))
+
+    # Cached quantities (stored in the instance ``__dict__``) that must be dropped
+    # when the attribute they derive from is set again.
+    _CACHE_FROM_D = (
+        "invD",
+        "sqrtD",
+        "sqrtinvD",
+        "_d",
+        "_inv_d",
+        "_sqrt_d",
+        "_inv_sqrt_d",
+    )
+    _CACHE_FROM_L = ("_L_csr", "_Lt_csr")
+    _CACHE_FROM_P = ("Pt",)
+
+    def _drop_cache(self, names: Tuple[str, ...]) -> None:
+        """Forget cached values so that they are recomputed on next access."""
+        for name in names:
+            self.__dict__.pop(name, None)
 
     @staticmethod
     def _validate_lower_triangle(A: sp.sparse.sparray, name: str) -> sp.sparse.sparray:
         """Assert that the input matrix A is lower triangular."""
-        try:
-            assert_allclose_sparse(A, sp.sparse.tril(A))
-        except AssertionError as e:
+        if sp.sparse.triu(A, k=1).count_nonzero() != 0:
             message = f"The input `{name}` must be a lower-triangular sparse array."
-            raise ValueError(message) from e
+            raise ValueError(message)
         return A
+
+    @staticmethod
+    def _scale_rows(v: NDArrayFloat, x: NDArrayFloat) -> NDArrayFloat:
+        """Return ``diag(v) @ x`` for ``x`` with shape (n,) or (n, m)."""
+        return v * x if x.ndim == 1 else v[:, None] * x
 
     @property
     def L(self) -> sp.sparse.csc_array:
@@ -243,12 +268,22 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         Set the sparse lower triangle of
         the :ref:`factorization <factref>`
         """
-        self._L = self._validate_lower_triangle(L, "L")
-        # Extract the diagonal
-        try:
-            np.testing.assert_allclose(L.diagonal(), np.ones(L.shape[0]))
-        except AssertionError as e:
-            raise ValueError("The diagonal elements of `L` are assumed to be 1!") from e
+        # Validate first, assign afterwards: a failed set leaves the instance intact.
+        self._validate_lower_triangle(L, "L")
+        if not np.allclose(L.diagonal(), 1.0, rtol=1e-7, atol=0.0):
+            raise ValueError("The diagonal elements of `L` are assumed to be 1!")
+        self._L = L
+        self._drop_cache(self._CACHE_FROM_L)
+
+    @cached_property
+    def _L_csr(self) -> sp.sparse.csr_array:
+        """CSR copy of L, required by ``spsolve_triangular`` (converted once)."""
+        return sp.sparse.csr_array(self._L)
+
+    @cached_property
+    def _Lt_csr(self) -> sp.sparse.csr_array:
+        """CSR copy of L^T, required by ``spsolve_triangular`` (converted once)."""
+        return sp.sparse.csr_array(self._L.T)
 
     @property
     def D(self) -> sp.sparse.csc_array:
@@ -279,9 +314,27 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
             )
 
         self._D = D
+        self._drop_cache(self._CACHE_FROM_D)
 
     @cached_property
-    def invD(self) -> sp.sparse.csc_array:
+    def _d(self) -> NDArrayFloat:
+        """Diagonal of D as a 1D vector."""
+        return np.asarray(self._D.diagonal(), dtype=np.float64)
+
+    @cached_property
+    def _inv_d(self) -> NDArrayFloat:
+        return 1.0 / self._d
+
+    @cached_property
+    def _sqrt_d(self) -> NDArrayFloat:
+        return np.sqrt(self._d)
+
+    @cached_property
+    def _inv_sqrt_d(self) -> NDArrayFloat:
+        return 1.0 / self._sqrt_d
+
+    @cached_property
+    def invD(self) -> sp.sparse.dia_array:
         r"""
         Inverse of :math:`\mathbf{D}` in
         the :ref:`factorization <factref>`.
@@ -290,10 +343,10 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return sp.sparse.diags(1.0 / self.D.diagonal())
+        return sp.sparse.diags_array(self._inv_d)
 
     @cached_property
-    def sqrtinvD(self) -> sp.sparse.csc_array:
+    def sqrtinvD(self) -> sp.sparse.dia_array:
         r"""
         Squared root inverse of :math:`\mathbf{D}` in
         the :ref:`factorization <factref>`.
@@ -302,10 +355,10 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return np.sqrt(self.invD)
+        return sp.sparse.diags_array(self._inv_sqrt_d)
 
     @cached_property
-    def sqrtD(self) -> sp.sparse.csc_array:
+    def sqrtD(self) -> sp.sparse.dia_array:
         r"""
         Squared root of :math:`\mathbf{D}` in
         the :ref:`factorization <factref>`.
@@ -314,7 +367,7 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         -----
         The property is read-only and updated when setting `D`.
         """
-        return np.sqrt(self.D)
+        return sp.sparse.diags_array(self._sqrt_d)
 
     @property
     def P(self) -> NDArrayInt:
@@ -331,6 +384,7 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         :ref:`factorization <factref>`.
         """
         self._P = np.asarray(P, dtype=np.int64).ravel()
+        self._drop_cache(self._CACHE_FROM_P)
 
     @cached_property
     def Pt(self) -> NDArrayInt:
@@ -379,13 +433,13 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         NDArrayFloat
             :math:`\mathbf{x}`, with the same shape as `b`.
         """
+        y = sp.sparse.linalg.spsolve_triangular(
+            self._L_csr, self.apply_P(b), lower=True, unit_diagonal=True
+        )
         return self.apply_Pt(
             sp.sparse.linalg.spsolve_triangular(
-                self.L.T,
-                self.invD
-                @ sp.sparse.linalg.spsolve_triangular(
-                    self.L, self.apply_P(b), lower=True, unit_diagonal=True
-                ),
+                self._Lt_csr,
+                self._scale_rows(self._inv_d, y),
                 lower=False,
                 unit_diagonal=True,
             )
@@ -407,9 +461,8 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         all non-zero eigenvalues of a square matrix. It coincides with the regular
         determinant when the matrix is non-singular.
         """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            return np.log(np.prod(self.D.diagonal()))
+        # Sum of logs: the product of the pivots overflows/underflows for large n.
+        return float(np.sum(np.log(self._d)))
 
     @property
     def n_pts(self) -> int:
@@ -454,22 +507,44 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         Return the diagonal entries of the matrix :math:`\mathbf{A}`.
 
         It as shape (n,).
-        """
-        return (self.L @ self.D @ self.L.T).diagonal()
 
-    def get_invdiagonal(self) -> NDArrayFloat:
+        Note
+        ----
+        :math:`\mathbf{A} = \mathbf{P}^{T}\mathbf{L}\mathbf{D}\mathbf{L}^{T}
+        \mathbf{P}`, so that :math:`A_{ii} = \sum_k L_{ik}^2 D_{kk}` is computed in
+        O(nnz(L)) without forming the product, and then un-permuted.
+        """
+        return self.apply_Pt(self.L.power(2) @ self._d)
+
+    def get_invdiagonal(self, block_size: int = 256) -> NDArrayFloat:
         r"""
         Return the diagonal entries of the inverse matrix :math:`\mathbf{A}^{-1}`.
 
         It as shape (n,).
+
+        Parameters
+        ----------
+        block_size : int, optional
+            Number of unit vectors processed per (multi right-hand side) triangular
+            solve. It bounds the memory to ``n * block_size`` floats. By default 256.
+
+        Note
+        ----
+        :math:`(A^{-1})_{ii} = \lVert \mathbf{D}^{-1/2}\mathbf{L}^{-1}\mathbf{P}
+        \mathbf{e}_i \rVert^2`: a single forward solve per unit vector is needed
+        (instead of a full forward + backward :py:meth:`solve`).
         """
-        cov_mat_diag = np.zeros(self.n_pts)
-        v = np.zeros(self.n_pts)
-        for i in range(self.n_pts):
-            v[i - 1] = 0.0
-            v[i] = 1.0
-            cov_mat_diag[i] = self.solve(v)[i]
-        return cov_mat_diag
+        n = self.n_pts
+        out = np.empty(n)
+        for start in range(0, n, block_size):
+            idx = np.arange(start, min(start + block_size, n))
+            E = np.zeros((n, idx.size))
+            E[idx, np.arange(idx.size)] = 1.0
+            Z = sp.sparse.linalg.spsolve_triangular(
+                self._L_csr, self.apply_P(E), lower=True, unit_diagonal=True
+            )
+            out[idx] = np.einsum("ij,ij,i->j", Z, Z, self._inv_d)
+        return out
 
     def colorize(self, x: NDArrayFloat) -> NDArrayFloat:
         """
@@ -727,7 +802,109 @@ class SparseCholeskyFactor(_PickleSafeLinearOperator):
         :py:meth:`SparseCholeskyFactor:whiten` but for the inverse
         :math:`\mathbf{A}^{-1}`.
         """
-        return self.sqrtD @ (self.L.T @ self.apply_P(x.T)).T
+        return (self.sqrtD @ (self.L.T @ self.apply_P(x.T))).T
+
+
+_Ordering = Union[Literal["amd", "rcm", "natural"], NDArrayInt]
+
+
+def sparse_cholesky_superlu(
+    A: sp.sparse.sparray,
+    ordering: _Ordering = "amd",
+    check: bool = True,
+) -> SparseCholeskyFactor:
+    r"""
+    Sparse :math:`\mathbf{LDL}^{\mathrm{T}} = \mathbf{PAP}^{\mathrm{T}}` factorization.
+
+    SuperLU (shipped with SciPy, BSD) is a general LU solver. For a symmetric
+    positive definite matrix, restricting it to diagonal pivots and a symmetric
+    ordering gives :math:`\mathbf{PAP}^{\mathrm{T}} = \mathbf{L}\mathbf{U}` with
+    :math:`\mathbf{L}` unit lower triangular and
+    :math:`\mathbf{U} = \mathbf{D}\mathbf{L}^{\mathrm{T}}`, which is exactly
+    the representation expected by :py:class:`SparseCholeskyFactor`.
+
+    Parameters
+    ----------
+    A : sp.sparse.sparray
+        Symmetric positive definite matrix, shape (n, n). Only symmetry is
+        assumed, not checked (see `check`).
+    ordering : {"amd", "rcm", "natural"} or array_like of int, optional
+        Fill-reducing symmetric ordering. ``"amd"`` uses SuperLU's minimum degree
+        on :math:`A + A^T` (default), ``"rcm"`` uses reverse Cuthill-McKee
+        (good for banded / grid-like matrices), ``"natural"`` keeps the input
+        order. An integer vector is used as the permutation ``p`` directly
+        (``A[p][:, p]`` is factorized).
+    check : bool, optional
+        If True, verify that SuperLU did not pivot off the diagonal and that all
+        pivots are strictly positive (SPD). By default True.
+
+    Returns
+    -------
+    SparseCholeskyFactor
+
+    Raises
+    ------
+    ValueError
+        If `A` is not square, is not positive definite, or the ordering is
+        invalid.
+    """
+    A = sp.sparse.csc_array(A)
+    n = A.shape[0]
+    if A.ndim != 2 or A.shape[1] != n:
+        raise ValueError(f"`A` must be square, got shape {A.shape}.")
+
+    # 1) Symmetric pre-ordering p (outer permutation)
+    if isinstance(ordering, str):
+        if ordering == "rcm":
+            p = sp.sparse.csgraph.reverse_cuthill_mckee(
+                A.tocsr(), symmetric_mode=True
+            ).astype(np.int64)
+            permc = "NATURAL"
+        elif ordering == "natural":
+            p, permc = np.arange(n, dtype=np.int64), "NATURAL"
+        elif ordering == "amd":
+            p, permc = None, "MMD_AT_PLUS_A"
+        else:
+            raise ValueError(f"Unknown ordering {ordering!r}.")
+    else:
+        p = np.asarray(ordering, dtype=np.int64).ravel()
+        if not np.array_equal(np.sort(p), np.arange(n)):
+            raise ValueError("`ordering` must be a permutation of range(n).")
+        permc = "NATURAL"
+
+    Ap = A if p is None else A[p][:, p].tocsc()
+
+    # 2) SuperLU, forced to behave symmetrically:
+    #  - diag_pivot_thresh=0 : always pivot on the diagonal (no row swaps),
+    #  - SymmetricMode       : symmetric structure heuristics,
+    #  - Equil=False         : safeguard; row/column equilibration could scale
+    #                          the two sides differently and break L U = L D L'.
+    try:
+        lu = sp.sparse.linalg.splu(
+            Ap,
+            permc_spec=permc,
+            diag_pivot_thresh=0.0,
+            options={"SymmetricMode": True, "Equil": False},
+        )
+    except RuntimeError as e:  # exactly singular
+        raise ValueError("`A` is singular or not positive definite.") from e
+
+    # 3) Combine permutations. SuperLU: Pr @ Ap @ Pc = L @ U with
+    #    Ap[argsort(perm_r)][:, argsort(perm_c)] = L U.
+    q_r, q_c = np.argsort(lu.perm_r), np.argsort(lu.perm_c)
+    if check and not np.array_equal(q_r, q_c):
+        raise ValueError("SuperLU pivoted off the diagonal: `A` is not SPD.")
+    P = q_c if p is None else p[q_c]
+
+    d = lu.U.diagonal()
+    if check and not np.all(d > 0.0):
+        raise ValueError(
+            f"{np.count_nonzero(d <= 0.0)} non-positive pivot(s): `A` is not SPD."
+        )
+
+    L = sp.sparse.csc_array(lu.L)
+    D = sp.sparse.dia_array((d[None, :], [0]), shape=(n, n)).tocsc()
+    return SparseCholeskyFactor(L, D, P)
 
 
 def assert_allclose_sparse(
@@ -748,7 +925,8 @@ def assert_allclose_sparse(
         Relative tolerance for the equality test, by default 1e-8.
     """
     # If you want to check matrix shapes as well
-    assert np.array_equal(A.shape, B.shape)
+    if tuple(A.shape) != tuple(B.shape):
+        raise AssertionError(f"Shape mismatch: {A.shape} != {B.shape}")
     r1, c1, v1 = sp.sparse.find(A)
     r2, c2, v2 = sp.sparse.find(B)
     np.testing.assert_equal(r1, r2)
@@ -777,6 +955,15 @@ def get_SPD_sparse_n11_example(seed: int) -> sp.sparse.csc_array:
     return A
 
 
+def get_L_D_P(A: sp.sparse.sparray):
+    """
+    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using
+    ``sparse_cholesky_superlu``.
+    """
+    scf = sparse_cholesky_superlu(A, check=False)
+    return scf.L, scf.D, scf.P
+
+
 def get_SPD_sparse_example(
     n: int, seed: int, diag_mean: float = 10.0
 ) -> sp.sparse.csc_array:
@@ -789,26 +976,37 @@ def get_SPD_sparse_example(
         Number of elements.
     seed : int
         Random seed.
+    diag_mean : float, optional
+        Mean of the diagonal entries (variances), by default 10.0.
 
     Returns
     -------
-    sp.sparse.cscarray
+    sp.sparse.csc_array
         CSC sparse SPD.
+
+    Note
+    ----
+    Since v0.6.0 the `seed` is honoured (it was previously ignored in favor of a
+    hard-coded seed of 42) and the random generator is local (the global numpy
+    state is no longer modified).
     """
-    # Initialize a sparse matrix
-    A = sp.sparse.lil_matrix((n, n))
+    rng = np.random.default_rng(seed)
+    variances = rng.uniform(-1.5, 1.5, n) + diag_mean
 
-    # Fill the diagonal with variances (non-zero values)
-    np.random.seed(42)  # for reproducibility
-    variances = np.random.uniform(-1.5, 1.5, n) + diag_mean
-    for i in range(n):
-        A[i, i] = variances[i]
+    # ~10% of the strictly upper triangle is filled with small covariances
+    rows, cols = np.triu_indices(n, k=1)
+    keep = rng.random(rows.size) < 0.1
+    rows, cols = rows[keep], cols[keep]
+    covs = rng.uniform(-0.5, 0.5, rows.size)
 
-    # Add some random non-zero covariances
-    for i in range(n):
-        for j in range(i + 1, n):
-            if np.random.rand() < 0.1:  # 10% chance of non-zero covariance
-                cov = np.random.uniform(-0.5, 0.5)
-                A[i, j] = cov
-                A[j, i] = cov  # symmetry
+    A = sp.sparse.coo_array(
+        (
+            np.concatenate([variances, covs, covs]),
+            (
+                np.concatenate([np.arange(n), rows, cols]),
+                np.concatenate([np.arange(n), cols, rows]),
+            ),
+        ),
+        shape=(n, n),
+    )
     return A.tocsc()

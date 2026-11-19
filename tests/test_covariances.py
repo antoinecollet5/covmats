@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import no_type_check
 
 import covmats
 import numpy as np
@@ -16,26 +15,6 @@ from covmats._covariances import (
 from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from covmats._types import NDArrayFloat
 from covmats.data import load_precision_example_4225x
-
-
-@no_type_check
-def _get_L_D_P(A: sp.sparse.sparray):
-    """
-    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
-
-    Note that sksparse uses SuiteSparse which is LGPL licence.
-    """
-    import sksparse.cholmod as cholmod
-
-    # Need to take the API change into account
-    try:
-        # sksparse 4.x
-        L, D, P = cholmod.ldl(A, order="amd")
-    except AttributeError:
-        # sksparse 5.x
-        f = cholmod.cholesky(A)
-        (L, D), P = f.L_D(), f.P()
-    return L, D, P
 
 
 def _check_colorize_adjoint(cov, seed: int = 0) -> None:
@@ -419,7 +398,7 @@ def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
     # dense covariance matrix
     Q = np.linalg.inv(A.toarray())
     cov = covmats.CovViaSparseCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(A)),
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(A)),
         sparse_covariance=A if is_embbed_covariance else None,
     )
 
@@ -427,7 +406,7 @@ def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
     cov.scf
 
     # Test to dense
-    np.testing.assert_allclose(cov.todense(), A.toarray())
+    np.testing.assert_allclose(cov.todense(), A.toarray(), atol=1e-12)
     # Test shape
     assert cov.shape == (N, N)
 
@@ -436,7 +415,7 @@ def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
 
     # Dense
     np.testing.assert_allclose(cov.precision, Q)
-    np.testing.assert_allclose(cov.todense(), A.toarray())
+    np.testing.assert_allclose(cov.todense(), A.toarray(), atol=1e-12)
 
     # Test solve
     expected_x = np.arange(N, dtype=np.float64)
@@ -465,7 +444,7 @@ def test_CovViaSparseCholesky(is_embbed_covariance: bool) -> None:
 def test_CovViaSparseCholesky_colorize_adjoint(is_embbed_covariance: bool) -> None:
     A = get_SPD_sparse_n11_example(seed=2026)
     cov = covmats.CovViaSparseCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(A)),
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(A)),
         sparse_covariance=A if is_embbed_covariance else None,
     )
     _check_colorize_adjoint(cov)
@@ -473,7 +452,9 @@ def test_CovViaSparseCholesky_colorize_adjoint(is_embbed_covariance: bool) -> No
 
 def test_CovViaSparseCholesky_colorize_adjoint_not_implemented(monkeypatch) -> None:
     A = get_SPD_sparse_n11_example(seed=2026)
-    cov = covmats.CovViaSparseCholesky(covmats.SparseCholeskyFactor(*_get_L_D_P(A)))
+    cov = covmats.CovViaSparseCholesky(
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(A))
+    )
     # simulate an older `covmats` where `SparseCholeskyFactor` does not (yet)
     # expose `colorize_adjoint`
     monkeypatch.delattr(covmats.SparseCholeskyFactor, "colorize_adjoint")
@@ -491,7 +472,7 @@ def test_CovViaSparseCholesky_colorize_adjoint_not_implemented(monkeypatch) -> N
 @pytest.mark.parametrize("is_embbed_precision", (True, False))
 def test_CovViaPrecisionCholesky(is_embbed_precision: bool) -> None:
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(2026)
     n = 5
     P = rng.random(size=(n, n))
     Q = P @ P.T  # a precision matrix must be positive definite
@@ -590,7 +571,7 @@ def test_CovViaSparsePrecisionCholesky(is_embbed_precision: bool) -> None:
     # dense covariance matrix
     A = np.linalg.inv(Q.toarray())
     cov = covmats.CovViaSparsePrecisionCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(Q)),
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(Q)),
         sparse_precision=Q if is_embbed_precision else None,
     )
 
@@ -606,7 +587,7 @@ def test_CovViaSparsePrecisionCholesky(is_embbed_precision: bool) -> None:
     np.testing.assert_allclose(cov.get_diagonal(), A.diagonal())
 
     # Dense
-    np.testing.assert_allclose(cov.precision.todense(), Q.toarray())
+    np.testing.assert_allclose(cov.precision.todense(), Q.toarray(), atol=1e-12)
     np.testing.assert_allclose(cov.todense(), A)
 
     # Test solve
@@ -637,7 +618,7 @@ def test_CovViaSparsePrecisionCholesky_colorize_adjoint(
 ) -> None:
     Q = get_SPD_sparse_n11_example(seed=2026)
     cov = covmats.CovViaSparsePrecisionCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(Q)),
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(Q)),
         sparse_precision=Q if is_embbed_precision else None,
     )
     _check_colorize_adjoint(cov)
@@ -726,15 +707,18 @@ def test_fft_covariance_matrix() -> None:
 
     # tests
     assert cov.n_pts == 225
-    np.testing.assert_allclose(cov.get_diagonal(), np.ones(_number_grid_cells) * 4.0)
-    assert np.sum(cov.get_diagonal()) == 900
+    # C = K + nugget * I : the nugget is an absolute variance added to the diagonal
+    np.testing.assert_allclose(
+        cov.get_diagonal(), np.ones(_number_grid_cells) * (4.0 + 1e-4)
+    )
+    np.testing.assert_allclose(np.sum(cov.get_diagonal()), 900 + 225 * 1e-4)
 
     # reinitiate comptors
     cov.reset_comptors()
     assert cov.itercount() == 0
 
     # Dense version
-    np.testing.assert_allclose(cov @ np.eye(cov.n_pts), cov.todense(), rtol=1e-3)
+    np.testing.assert_allclose(cov @ np.eye(cov.n_pts), cov.todense(), atol=1e-12)
 
     # Test to matvec and solve
     np.testing.assert_allclose(cov.solve(cov @ np.ones(225)), np.ones(225))
@@ -919,7 +903,7 @@ def test_CovViaEnsemble_1() -> None:
     # C = np.linalg.inv(Q.toarray())
 
     cov = covmats.CovViaSparsePrecisionCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(Q))
     )
 
     # Sample from this covariance
@@ -952,7 +936,7 @@ def test_CovViaEnsemble_2() -> None:
     # dense covariance matrix
     C = np.linalg.inv(Q.toarray())
     cvspc = covmats.CovViaSparsePrecisionCholesky(
-        covmats.SparseCholeskyFactor(*_get_L_D_P(Q))
+        covmats.SparseCholeskyFactor(*covmats.get_L_D_P(Q))
     )
 
     # White noise sampling

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import abc
 import logging
+import warnings
 from abc import abstractmethod
 from functools import cached_property
 from time import time
@@ -26,7 +27,8 @@ from covmats._helpers import (
 from covmats._sparse_helpers import SparseCholeskyFactor, _PickleSafeLinearOperator
 from covmats._toeplitz import (
     create_toepliz_first_row,
-    toeplitz_product,
+    toeplitz_circulant_spectrum,
+    toeplitz_product_from_spectrum,
 )
 from covmats._types import ArrayLike, NDArrayFloat, NDArrayInt
 
@@ -936,8 +938,6 @@ class CovViaSparseCholesky(CovarianceMatrix):
     because the Cholesky decomposition does not exist for a singular
     covariance matrix.
 
-    TODO: indicate that LGPL licence is expected here because it relies on CHOLMOD.
-
     Examples
     --------
     Prepare a symmetric positive definite covariance matrix ``A`` and a
@@ -1605,11 +1605,12 @@ class CovViaEigenFactorization(CovarianceMatrix):
             L = U * V^{T/2}.
         """
         # 1) Convert U sqrt(V) to a sparse format
-        sp_mat = sp.sparse.lil_array(self._v * np.sqrt(self._w).T)
+        _coo = sp.sparse.coo_array(self._v * np.sqrt(self._w).T)
         # 2) Resize -> we now have a square matrix and indices are preserved
-        sp_mat.resize(self.shape)
-        # 3) Convert to column format
-        return sp_mat.tocsc()
+        #    (no intermediate lil format: it is slow to build and to resize)
+        return sp.sparse.coo_array(
+            (_coo.data, (_coo.row, _coo.col)), shape=self.shape
+        ).tocsc()
 
     @property
     def precision(self) -> sp.sparse.sparray:
@@ -1662,7 +1663,11 @@ def get_eigen_factorization_gram_matrix_trick(
     U = U[:, idx]
 
     # Keep only positive values(truncate)
-    tol = np.max(eigvals) * max(GramM.shape) * np.finfo(eigvals.dtype).eps
+    # The null space of centered anomalies (rank <= Ne - 1) shows up as eigenvalues of
+    # the order of ``max(shape) * eps * max(eigvals)`` (up to ~0.5x in practice): the
+    # tolerance must leave a margin, otherwise a spurious mode survives and
+    # ``V = anomalies.T @ U / s`` divides noise by a (nearly) null singular value.
+    tol = 10.0 * np.max(eigvals) * max(GramM.shape) * np.finfo(eigvals.dtype).eps
     mask = eigvals > tol
 
     eigvals = eigvals[mask]
@@ -1752,6 +1757,9 @@ class CovViaEnsemble(CovarianceMatrix):
     @ensemble.setter
     def ensemble(self, value: NDArrayFloat) -> None:
         self._ensemble = value
+        # Drop values cached from a previous ensemble (they would be stale).
+        self.__dict__.pop("anomalies", None)
+        self.__dict__.pop("n_ens", None)
 
         # build preconditioner using Eigen decomposition
         self._v, self._sqrt_w = get_eigen_factorization_gram_matrix_trick(
@@ -1763,8 +1771,10 @@ class CovViaEnsemble(CovarianceMatrix):
 
         self.n_pts = np.shape(self.ensemble)[1]
         self._subspace_size = np.shape(self._v)[1]
-        self._rank = 0
-        self._log_pdet = 0.0
+        # Same convention as `CovViaEigenFactorization`: the pseudo-determinant
+        # only involves the strictly positive eigenvalues.
+        self._rank = self._subspace_size
+        self._log_pdet = float(np.sum(np.log(self._w)))
 
     @cached_property
     def anomalies(self) -> NDArrayFloat:
@@ -1868,11 +1878,20 @@ class CovViaEnsemble(CovarianceMatrix):
         return (self._v * self._inv_w[None, :]) @ self._v.T
 
 
+def _scale_points(pts: NDArrayFloat, len_scale: NDArrayFloat) -> NDArrayFloat:
+    """Divide the coordinates (Npts, Ndim) by a scalar or per-dimension length."""
+    pts = np.asarray(pts, dtype=np.float64)
+    ls = np.broadcast_to(np.asarray(len_scale, dtype=np.float64), (pts.shape[1],))
+    return pts / ls[None, :]
+
+
 def _generate_dense_matrix_from_kernel(
-    pts: NDArrayFloat, kernel: Callable, len_scale: NDArrayFloat, nugget: float = 0.0
+    pts: NDArrayFloat, kernel: Callable, len_scale: NDArrayFloat
 ) -> NDArrayFloat:
     """
-    Generate a dense matrix.
+    Generate the dense kernel matrix :math:`K_{ij} = k(\\lVert x_i - x_j \\rVert)`.
+
+    The nugget is *not* included, see :py:class:`CovKernelAsLinop`.
 
     Compute O(dim^2) interactions.
 
@@ -1888,18 +1907,13 @@ def _generate_dense_matrix_from_kernel(
         Correlation length(s) used to scale the points coordinates before
         evaluating the kernel. Either a scalar (isotropic) or a vector with
         one length per dimension (anisotropic).
-    nugget: float
-        It acts as a regularization. The default is 0.0 (no nugget effect).
 
     Returns
     -------
     NDArrayFloat
-        The dense matrix.
+        The dense kernel matrix.
     """
-    # Scale the points coordinates
-    scaled_pts = np.array(pts, copy=True)
-    for dim in range(scaled_pts.shape[1]):
-        scaled_pts[:, dim] /= len_scale[dim]
+    scaled_pts = _scale_points(pts, len_scale)
     return kernel(sp.spatial.distance.cdist(scaled_pts, scaled_pts))
 
 
@@ -1914,6 +1928,30 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
     linear-operator capabilities (matrix-vector products and, via GMRES,
     linear solves) -- no sampling or other statistical calculations, unlike
     the full :py:class:`CovarianceMatrix` hierarchy.
+
+    The operator represents
+
+    .. math::
+
+        \\mathbf{C} = \\mathbf{K} + \\tau^2 \\mathbf{I}, \\quad
+        K_{ij} = k\\left(\\left\\lVert
+        \\frac{x_i - x_j}{\\ell} \\right\\rVert\\right),
+
+    where :math:`k` is the kernel, :math:`\\ell` the (possibly per-dimension) length
+    scale and :math:`\\tau^2` =  `nugget` the nugget effect: an *absolute* variance
+    (same units as the kernel values) added to the diagonal. It must be
+    non-negative, which guarantees that :math:`\\mathbf{C}` is at least as well
+    conditioned as :math:`\\mathbf{K}`: :math:`\\lambda_{\\min}(\\mathbf{C}) \\geq
+    \\tau^2`. It is applied once, in this class, so that all the operations
+    (matrix-vector product, dense matrix, diagonal, solve, preconditioner) are
+    consistent.
+
+    Notes
+    -----
+    To implement a new type of matrix (e.g. another fast matrix-vector product), only
+    override :py:meth:`CovKernelAsLinop._kernel_matvec`, which must return
+    :math:`\\mathbf{K}\\mathbf{x}` **without** the nugget. Do not handle the nugget in
+    the subclass.
 
     See Also
     --------
@@ -1959,8 +1997,10 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
             evaluating the kernel. Either a scalar (isotropic) or a vector
             with one length per dimension (anisotropic).
         nugget : float, optional
-            Nugget effect (diagonal regularization) added to the covariance
-            matrix to improve its conditioning, by default 0.0 (no nugget).
+            Nugget effect :math:`\tau^2 \geq 0`: an absolute variance (same units as
+            the kernel) added to the diagonal of the covariance matrix,
+            :math:`\mathbf{C} = \mathbf{K} + \tau^2 \mathbf{I}`. It improves the
+            conditioning. By default 0.0 (no nugget).
         k : int, optional
             Number of local centers used to build the preconditioner when
             `is_use_preconditioner` is True, by default 100.
@@ -1969,6 +2009,11 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
             use it when solving :math:`\mathbf{Ax} = \mathbf{b}` systems with
             :py:meth:`CovKernelAsLinop.solve`. By default False.
         """
+        nugget = float(nugget)
+        if not np.isfinite(nugget) or nugget < 0.0:
+            raise ValueError(
+                f"`nugget` is a variance: it must be finite and >= 0 (got {nugget})!"
+            )
         self._kernel: Callable = kernel
         self._pts: NDArrayFloat = pts
         self._nugget: float = nugget
@@ -1981,8 +2026,9 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
         self.dtype = np.dtype("d")  # float64 for LinearOperator
 
         if is_use_preconditioner:
+            # The kernel expects scaled distances, as in `todense`/FFT matvec.
             self._preconditioner: Optional[csr_array] = _build_kernel_preconditioner(
-                pts, kernel, k=k
+                _scale_points(pts, len_scale), kernel, k=k, nugget=nugget
             )
         else:
             self._preconditioner = None
@@ -2002,22 +2048,36 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
         """Shape of the covariance matrix (n, n)."""
         pass
 
-    def todense(self) -> NDArrayFloat:
-        """
-        Explicit dense representation of the covariance matrix.
-        """
+    @property
+    def nugget(self) -> float:
+        """Return the nugget effect (variance added to the diagonal)."""
+        return self._nugget
+
+    def _kernel_todense(self) -> NDArrayFloat:
+        """Return the dense kernel matrix K, without the nugget."""
         return _generate_dense_matrix_from_kernel(
-            self._pts, self._kernel, self._len_scale, self._nugget
+            self._pts, self._kernel, self._len_scale
         )
 
-    @cached_property
-    def _dense_matrix(self) -> NDArrayFloat:
+    def todense(self) -> NDArrayFloat:
+        r"""
+        Explicit dense representation of the covariance matrix.
+
+        It is :math:`\mathbf{C} = \mathbf{K} + \tau^2 \mathbf{I}`.
         """
-        Cache the dense (Npts, Npts) covariance matrix built from the kernel.
+        C = self._kernel_todense()
+        if self._nugget != 0.0:
+            C[np.diag_indices_from(C)] += self._nugget
+        return C
+
+    @cached_property
+    def _dense_kernel_matrix(self) -> NDArrayFloat:
+        """
+        Cache the dense (Npts, Npts) kernel matrix K (without nugget).
 
         Note
         ----
-        This makes :py:meth:`CovKernelAsLinop.matvec` (and hence
+        This makes the default :py:meth:`CovKernelAsLinop._kernel_matvec` (and hence
         :py:meth:`CovKernelAsLinop.solve`, which calls it repeatedly through
         GMRES) efficient after the first call, at the cost of the O(Npts^2)
         memory of the dense representation. For very large point sets where
@@ -2025,16 +2085,28 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
         grid, prefer :py:class:`CovKernelAsLinopViaFFT`, which never
         materializes the dense matrix.
         """
-        return self.todense()
+        return self._kernel_todense()
+
+    def _kernel_matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Return :math:`\mathbf{K}\mathbf{x}`, **without** the nugget.
+
+        This is the only method to override to provide a new type of matrix
+        (the nugget, counters, diagonal, solve and preconditioner are handled here).
+        """
+        return self._dense_kernel_matrix @ x
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
+        """Return the covariance matrix :math:`(K + \\tau^2 I)` times the vector x."""
         self.count += 1
-        return self._dense_matrix @ x
+        y = self._kernel_matvec(x)
+        if self._nugget != 0.0:
+            y = y + self._nugget * x
+        return y
 
     def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        return self._kernel(np.zeros(len(self._pts)))
+        """Return the diagonal entries of the matrix (variances + nugget)."""
+        return self._kernel(np.zeros(self.n_pts)) + self._nugget
 
     def reset_comptors(self) -> None:
         """Reset the internal call counters (`count` and `solvematvecs`) to zero."""
@@ -2072,15 +2144,17 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
 
         """
 
-        residual = CallBack()
-        # make sure to have 2d array
-        _b = np.reshape(b, (self.n_pts, -1))
+        # make sure to have a 2d float array (an integer `b` would truncate `x`)
+        _b = np.reshape(np.asarray(b, dtype=np.float64), (self.n_pts, -1))
 
         nv = np.shape(_b)[1]
         x = np.zeros_like(_b)
 
-        # does not work for matrices ?
+        # GMRES only handles one right-hand side at a time
         for i in range(nv):
+            # fresh counter per right-hand side, otherwise the iterations of the
+            # previous columns are counted again (quadratic over-counting).
+            residual = CallBack()
             x[:, i], info = gmres(
                 self,
                 b=_b[:, i],
@@ -2092,6 +2166,12 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
                 atol=0.0,
             )
             self.solvematvecs += residual.itercount
+            if info != 0:
+                warnings.warn(
+                    f"GMRES did not converge for column {i} (info={info}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         # Get the original shape back
         return x.reshape(np.shape(b))
@@ -2102,6 +2182,7 @@ def _build_kernel_preconditioner(
     kernel: Callable,
     k: int = 100,
     logger: Optional[logging.Logger] = None,
+    nugget: float = 0.0,
 ) -> csr_array:
     """
     Implementation of the preconditioner based on changing basis.
@@ -2116,6 +2197,12 @@ def _build_kernel_preconditioner(
     k : int, optional
         Number of local centers in the preconditioner. Controls the sparity of
         the preconditioner. By default 100.
+    logger : Optional[logging.Logger], optional
+        Logger used to report the elapsed time. By default None.
+    nugget : float, optional
+        Variance added to the diagonal of the local covariance matrices, so that
+        the preconditioner approximates the inverse of :math:`K + \\tau^2 I`.
+        By default 0.0.
 
     Returns
     -------
@@ -2135,10 +2222,9 @@ def _build_kernel_preconditioner(
     Implementation of the preconditioner based on local centers.
     The parameter k controls the sparsity and the effectiveness of the preconditioner.
     Larger k is more expensive but results in fewer iterations.
-    For large ill-conditioned systems, it was best to use a nugget effect to make the
+    For large ill-conditioned systems, it is best to use a nugget effect to make the
     problem better conditioned.
-    To Do: implementation based on local centers and additional points. Will remove the
-    hack of using nugget effect.
+    To Do: implementation based on local centers and additional points.
 
     """
     nb_pts: int = pts.shape[0]
@@ -2178,6 +2264,8 @@ def _build_kernel_preconditioner(
     )
     for i in np.arange(nb_pts):
         Q = kernel(cdist(pts[ind[i, :], :], pts[ind[i, :], :]))
+        if nugget != 0.0:
+            Q[np.diag_indices(k)] += nugget
         c, info = potrf(Q, lower=True, overwrite_a=True, clean=False)
         nu[i], info = potrs(c, y, lower=True)
 
@@ -2209,7 +2297,7 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
     TODO: add references.
     """
 
-    __slots__: List[str] = ["_first_row"]
+    __slots__: List[str] = ["_first_row", "_spectrum"]
 
     def __init__(
         self,
@@ -2241,8 +2329,10 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
             evaluating the kernel. Either a scalar (isotropic) or a vector
             with one length per dimension (anisotropic).
         nugget : float, optional
-            Nugget effect (diagonal regularization) added to the covariance
-            matrix to improve its conditioning, by default 0.0 (no nugget).
+            Nugget effect :math:`\\tau^2 \\geq 0`: an absolute variance (same units as
+            the kernel) added to the diagonal of the covariance matrix,
+            :math:`\\mathbf{C} = \\mathbf{K} + \\tau^2 \\mathbf{I}`. It improves the
+            conditioning. By default 0.0 (no nugget).
         k : int, optional
             Number of local centers in the preconditioner. Controls the sparity of
             the preconditioner. It should be inferior to the number of points.
@@ -2256,6 +2346,8 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
         pts = get_pts_coords_regular_grid(mesh_dim, self.param_shape)
 
         self._first_row = create_toepliz_first_row(pts, kernel, len_scale)
+        # The FFT of the circulant embedding is the same for every product: do it once
+        self._spectrum = toeplitz_circulant_spectrum(self._first_row, self.param_shape)
         super().__init__(
             pts,
             kernel,
@@ -2265,11 +2357,9 @@ class CovKernelAsLinopViaFFT(CovKernelAsLinop):
             is_use_preconditioner=is_use_preconditioner,
         )
 
-    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix times the vector x."""
-        return toeplitz_product(x, self._first_row, self.param_shape) * (
-            1 + self._nugget
-        )
+    def _kernel_matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return K times the vector x (without nugget), using FFTs."""
+        return toeplitz_product_from_spectrum(x, self._spectrum, self.param_shape)
 
 
 def get_linop_eigen_factorization(

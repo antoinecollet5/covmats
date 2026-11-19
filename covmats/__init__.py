@@ -81,6 +81,7 @@ Helper to work with sparse matrices and covariances.
    :toctree: _autosummary
 
     SparseCholeskyFactor
+    sparse_cholesky_superlu
 
 Grid utilities
 ^^^^^^^^^^^^^^
@@ -228,8 +229,10 @@ from covmats._priors import (
 )
 from covmats._sparse_helpers import (
     SparseCholeskyFactor,
+    get_L_D_P,
     get_SPD_sparse_example,
     get_SPD_sparse_n11_example,
+    sparse_cholesky_superlu,
 )
 from covmats.data import (
     load_precision_example_4225x,
@@ -264,10 +267,12 @@ __all__ = [
     "load_precision_example_4225x",
     "load_precision_example_4225x_SCF",
     "SparseCholeskyFactor",
+    "sparse_cholesky_superlu",
     "get_SPD_sparse_n11_example",
     "get_SPD_sparse_example",
     "get_pts_coords_regular_grid",
     "make_point_observation_operator",
     "conditional_simulate",
     "conditional_mean",
+    "get_L_D_P",
 ]

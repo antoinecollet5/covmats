@@ -10,7 +10,7 @@ at the Ecole des Mines de Paris.
 Development Lead
 ----------------
 
-* Antoine Collet <antoine.collet5@gmail.com>
+* Antoine Collet <antoine.collet@proton.me>
 
 Contributors
 ------------

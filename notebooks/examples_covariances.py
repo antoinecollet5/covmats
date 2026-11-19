@@ -245,59 +245,6 @@ def _(A_cho, cov_cho, np, rng_cho):
 def _(mo):
     mo.md(r"""
     ### CovViaSparseCholesky
-
-    ⚠️ About the following code that performs sparse cholesky factorization
-
-    [Scikit-sparse](https://github.com/scikit-sparse/scikit-sparse) depends on external
-    libraries with GPL licenses, such as
-    [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse?tab=License-1-ov-file).
-    As a consequence the following piece of code must adopt that license as well. Please
-    look into the terms of this license before creating a dynamic link to this pieces in
-    your downstream package and understand commercial use limitations. We are not
-    lawyers and cannot provide any guidance on the terms of this license.
-
-    Please see https://www.gnu.org/licenses/licenses.html#LGPL
-    """)
-    return
-
-
-@app.cell
-def _(sp):
-    from typing import no_type_check
-
-    @no_type_check  # for ty checks
-    def _get_L_D_P(A: sp.sparse.sparray):
-        """
-        Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
-
-        Note that sksparse uses SuiteSparse which is LGPL licence.
-        """
-        import sksparse.cholmod as cholmod
-
-        # Need to take the API change into account
-        try:
-            # sksparse 4.x
-            L, D, P = cholmod.ldl(A, order="amd")
-        except AttributeError:
-            # sksparse 5.x
-            f = cholmod.cholesky(A)
-            (L, D), P = f.L_D(), f.P()
-        return L, D, P
-
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    To keep this tutorial free of GPL-licensed dependencies, we instead build the
-    $\mathbf{L}\mathbf{D}\mathbf{L}^T$ factorization with `scipy.linalg.ldl`
-    (dense, but fine for a small illustrative example) and wrap it into a
-    :py:class:`SparseCholeskyFactor`, which `CovViaSparseCholesky` and
-    `CovViaSparsePrecisionCholesky` both build upon. In practice, for a sparse
-    precision/covariance matrix, you would instead obtain `L`, `D` and `P` from a
-    real sparse solver (e.g. `sksparse.cholmod`, subject to the license notice
-    above).
     """)
     return
 
