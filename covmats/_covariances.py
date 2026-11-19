@@ -2099,7 +2099,7 @@ class CovKernelAsLinop(_PickleSafeLinearOperator, abc.ABC):
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix :math:`(K + \\tau^2 I)` times the vector x."""
         self.count += 1
-        y = self._kernel_matvec(x)
+        y = np.reshape(self._kernel_matvec(x), np.shape(x))
         if self._nugget != 0.0:
             y = y + self._nugget * x
         return y

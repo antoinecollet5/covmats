@@ -893,7 +893,9 @@ def sparse_cholesky_superlu(
     #    Ap[argsort(perm_r)][:, argsort(perm_c)] = L U.
     q_r, q_c = np.argsort(lu.perm_r), np.argsort(lu.perm_c)
     if check and not np.array_equal(q_r, q_c):
-        raise ValueError("SuperLU pivoted off the diagonal: `A` is not SPD.")
+        raise ValueError(
+            "SuperLU pivoted off the diagonal: `A` is not SPD."
+        )  # pragma: no cover
     P = q_c if p is None else p[q_c]
 
     d = lu.U.diagonal()
